@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "botkube.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "botkube.name" . }}
+    helm.sh/chart: {{ include "botkube.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    component: controller
+    app: botkube
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      component: controller
+      app: botkube
+  template:
+    metadata:
+      labels:
+        component: controller
+        app: botkube
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "botkube.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/botkube"]
+          args: ["controller"]
+          volumeMounts:
+            - name: config-volume
+              mountPath: "/config"
+          {{- if .Values.config.ssl.enabled }}
+            - name: certs
+              mountPath: "/etc/ssl/certs"
+          {{ end }}
+          env:
+            - name: CONFIG_PATH
+              value: "/config/"
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: BOTKUBE_VERSION
+              value: {{ .Chart.Version }}
+            - name: METRICS_PORT
+              value: {{ .Values.service.targetPort | quote }} 
+        {{- if .Values.extraEnv }}
+          {{- range $name, $value := .Values.extraEnv }}
+            - name: {{ $name }}
+              value: {{ quote $value }}
+          {{- end }}
+        {{- end }}            
+      volumes:
+        - name: config-volume
+          projected:
+            sources:
+            - configMap:
+                name: {{ include "botkube.fullname" . }}-configmap
+            - secret:
+                name: {{ include "botkube.fullname" . }}-communication-secret
+      {{- if .Values.config.ssl.enabled }} 
+        - name: certs
+          secret:
+            secretName: {{ include "botkube.fullname" . }}-certificate-secret
+      {{ end }}
+      {{- if .Values.securityContext }}
+      securityContext:
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+      {{ end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- end }}
+

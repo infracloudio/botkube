@@ -282,6 +282,38 @@ communications:
     enabled: false
     url: 'WEBHOOK_URL'                          # e.g https://example.com:80
 
+auditWebhook:
+  enabled: false
+  replicaCount: 1
+  stages:
+    - ResponseComplete
+    - ResponseStarted
+  config:
+    sink:
+      elasticsearch:
+        enable: false
+        server: 'ELASTICSEARCH_ADDRESS'            # e.g https://example.com:9243
+        username: 'ELASTICSEARCH_USERNAME'
+        password: 'ELASTICSEARCH_PASSWORD'
+        # ELS index settings
+        index:
+          name: botkube-audit
+          type: botkube-audit-event
+          shards: 1
+          replicas: 0
+    notifier:
+      # If set true, BotKube sends audit event notification via communication mediums
+      enabled: false
+      # Set rules to filter Kubernetes audit events
+      rules:
+      - name: Security Alert
+        description: Somebody tried to exec into a Pod
+        # Filter audit events based on conditions
+        # Use OPA Rego syntax to write conditions
+        condition: input.objectRef.resource == "pods"; input.objectRef.subresource == "exec"; input.stage == "ResponseStarted"
+        # One of the critical, error, warn, info, or debug
+        priority: critical
+
 service:
   name: metrics
   port: 2112

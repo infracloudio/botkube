@@ -18,7 +18,7 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 # Development image
-FROM golang:1.12-alpine3.10 AS BUILD-ENV
+FROM golang:1.13-alpine3.10 AS BUILD-ENV
 
 ARG GOOS_VAL 
 ARG GOARCH_VAL
@@ -53,8 +53,8 @@ RUN addgroup --gid 101 botkube && \
 # Run as Non Privilaged user
 USER botkube
 
-COPY --from=BUILD-ENV /go/bin/botkube /go/bin/botkube
+COPY --from=BUILD-ENV /go/bin/botkube /bin/botkube
 COPY --from=BUILD-ENV /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=BUILD-ENV /usr/local/bin/kubectl /usr/local/bin/kubectl
 
-ENTRYPOINT /go/bin/botkube
+ENTRYPOINT /bin/botkube

@@ -33,55 +33,40 @@ import (
 	rbacV1 "k8s.io/api/rbac/v1"
 )
 
-// Level type to store event levels
-type Level string
-
-const (
-	// Info level
-	Info Level = "info"
-	// Warn level
-	Warn Level = "warn"
-	// Debug level
-	Debug Level = "debug"
-	// Error level
-	Error Level = "error"
-	// Critical level
-	Critical Level = "critical"
-)
-
 // Event to store required information from k8s objects
 type Event struct {
-	Code      string
-	Title     string
-	Kind      string
-	Name      string
-	Namespace string
-	Messages  []string
-	Type      config.EventType
-	Reason    string
-	Error     string
-	Level     Level
-	Cluster   string
-	Channel   string
-	TimeStamp time.Time
-	Count     int32
-	Action    string
-	Skip      bool `json:",omitempty"`
+	Code        string
+	Title       string
+	Description string
+	Kind        string
+	Name        string
+	Namespace   string
+	Messages    []string
+	Type        config.EventType
+	Reason      string
+	Error       string
+	Level       config.Level
+	Cluster     string
+	Channel     string
+	TimeStamp   time.Time
+	Count       int32
+	Action      string
+	Skip        bool `json:",omitempty"`
 
 	Recommendations []string
 	Warnings        []string
 }
 
 // LevelMap is a map of event type to Level
-var LevelMap map[config.EventType]Level
+var LevelMap map[config.EventType]config.Level
 
 func init() {
-	LevelMap = make(map[config.EventType]Level)
-	LevelMap[config.CreateEvent] = Info
-	LevelMap[config.UpdateEvent] = Warn
-	LevelMap[config.DeleteEvent] = Critical
-	LevelMap[config.ErrorEvent] = Error
-	LevelMap[config.WarningEvent] = Error
+	LevelMap = make(map[config.EventType]config.Level)
+	LevelMap[config.CreateEvent] = config.Info
+	LevelMap[config.UpdateEvent] = config.Warn
+	LevelMap[config.DeleteEvent] = config.Critical
+	LevelMap[config.ErrorEvent] = config.Error
+	LevelMap[config.WarningEvent] = config.Error
 }
 
 // New extract required details from k8s object and returns new Event object

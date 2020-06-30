@@ -1,0 +1,22 @@
+{{- if .Values.auditWebhook.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "botkube.fullname" . }}-audit-webhook
+  labels: 
+    app.kubernetes.io/name: {{ include "botkube.name" . }}
+    helm.sh/chart: {{ include "botkube.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}  
+    component: auditwebhook
+    app: botkube
+spec:
+  selector:
+    app: botkube
+    component: auditwebhook
+  ports:
+    - protocol: TCP
+      port: 443
+      targetPort: 8080
+      name: http
+{{- end }}

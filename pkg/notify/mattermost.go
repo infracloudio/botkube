@@ -38,15 +38,15 @@ type Mattermost struct {
 }
 
 // NewMattermost returns new Mattermost object
-func NewMattermost(c *config.Config) (Notifier, error) {
+func NewMattermost(c config.Mattermost) (Notifier, error) {
 	// Set configurations for Mattermost server
-	client := model.NewAPIv4Client(c.Communications.Mattermost.URL)
-	client.SetOAuthToken(c.Communications.Mattermost.Token)
-	botTeam, resp := client.GetTeamByName(c.Communications.Mattermost.Team, "")
+	client := model.NewAPIv4Client(c.URL)
+	client.SetOAuthToken(c.Token)
+	botTeam, resp := client.GetTeamByName(c.Team, "")
 	if resp.Error != nil {
 		return nil, resp.Error
 	}
-	botChannel, resp := client.GetChannelByName(c.Communications.Mattermost.Channel, botTeam.Id, "")
+	botChannel, resp := client.GetChannelByName(c.Channel, botTeam.Id, "")
 	if resp.Error != nil {
 		return nil, resp.Error
 	}
@@ -54,7 +54,7 @@ func NewMattermost(c *config.Config) (Notifier, error) {
 	return &Mattermost{
 		Client:    client,
 		Channel:   botChannel.Id,
-		NotifType: c.Communications.Mattermost.NotifType,
+		NotifType: c.NotifType,
 	}, nil
 }
 

@@ -1,47 +1,53 @@
+{{- if .Values.auditWebhook.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "botkube.fullname" . }}
+  name: {{ include "botkube.name" . }}-audit-webhook
   labels:
     app.kubernetes.io/name: {{ include "botkube.name" . }}
     helm.sh/chart: {{ include "botkube.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
-    component: controller
+    component: auditwebhook
     app: botkube
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      component: controller
+      component: auditwebhook
       app: botkube
   template:
     metadata:
       labels:
-        component: controller
+        component: auditwebhook
         app: botkube
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/audit-configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "botkube.serviceAccountName" . }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/botkube"]
+          args: ["auditwebhook"]
           volumeMounts:
+            - mountPath: /etc/webhook/certs
+              name: webhook-certs
+              readOnly: true
             - name: config-volume
               mountPath: "/config"
-          {{- if .Values.config.ssl.enabled }}
-            - name: certs
-              mountPath: "/etc/ssl/certs"
-          {{ end }}
           env:
+            - name: AUDIT_WEBHOOK_TLS_CERT
+              value: "/etc/webhook/certs/tls.crt"
+            - name: AUDIT_WEBHOOK_TLS_KEY
+              value: "/etc/webhook/certs/tls.key"
+            - name: AUDIT_WEBHOOK_PORT
+              value: "8080"
             - name: CONFIG_PATH
               value: "/config/"
             - name: LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
-            - name: BOTKUBE_VERSION
-              value: {{ .Chart.Version }}
             - name: METRICS_PORT
               value: {{ .Values.service.targetPort | quote }} 
         {{- if .Values.extraEnv }}
@@ -51,18 +57,18 @@ spec:
           {{- end }}
         {{- end }}            
       volumes:
+        - name: webhook-certs
+          projected:
+            sources:
+            - secret:
+                name: {{ include "botkube.fullname" . }}-audit-webhook-certs
         - name: config-volume
           projected:
             sources:
             - configMap:
-                name: {{ include "botkube.fullname" . }}-configmap
+                name: {{ include "botkube.fullname" . }}-audit-webhook
             - secret:
                 name: {{ include "botkube.fullname" . }}-communication-secret
-      {{- if .Values.config.ssl.enabled }} 
-        - name: certs
-          secret:
-            secretName: {{ include "botkube.fullname" . }}-certificate-secret
-      {{ end }}
       {{- if .Values.securityContext }}
       securityContext:
         runAsUser: {{ .Values.securityContext.runAsUser }}
@@ -76,4 +82,4 @@ spec:
       tolerations:
         {{- toYaml .Values.tolerations | nindent 8 }}
       {{- end }}
-
+{{- end }}

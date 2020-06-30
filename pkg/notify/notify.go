@@ -20,11 +20,40 @@
 package notify
 
 import (
+	"fmt"
+
+	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/events"
+	"github.com/infracloudio/botkube/pkg/log"
 )
 
 // Notifier to send event notification on the communication channels
 type Notifier interface {
 	SendEvent(events.Event) error
 	SendMessage(string) error
+}
+
+func ListNotifiers(conf config.CommunicationsConfig) []Notifier {
+	var notifiers []Notifier
+	if conf.Slack.Enabled {
+		notifiers = append(notifiers, NewSlack(conf.Slack))
+	}
+	if conf.Mattermost.Enabled {
+		if notifier, err := NewMattermost(conf.Mattermost); err == nil {
+			notifiers = append(notifiers, notifier)
+		} else {
+			log.Error(fmt.Sprintf("Failed to create Mattermost client. Error: %v", err))
+		}
+	}
+	if conf.ElasticSearch.Enabled {
+		if els, err := NewElasticSearch(conf.ElasticSearch); err == nil {
+			notifiers = append(notifiers, els)
+		} else {
+			log.Error(fmt.Sprintf("Failed to create els client. Error: %v", err))
+		}
+	}
+	if conf.Webhook.Enabled {
+		notifiers = append(notifiers, NewWebhook(conf))
+	}
+	return notifiers
 }

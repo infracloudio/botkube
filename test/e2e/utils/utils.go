@@ -20,15 +20,18 @@
 package utils
 
 import (
+	"context"
 	"testing"
+
+	"github.com/nlopes/slack"
+	v1 "k8s.io/api/core/v1"
+	networkV1beta1 "k8s.io/api/networking/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/notify"
 	"github.com/infracloudio/botkube/pkg/utils"
-	"github.com/nlopes/slack"
-	v1 "k8s.io/api/core/v1"
-	networkV1beta1 "k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // SlackMessage structure
@@ -59,25 +62,25 @@ func CreateResource(t *testing.T, obj CreateObjects) {
 	switch obj.Kind {
 	case "pod":
 		s := obj.Specs.(*v1.Pod)
-		_, err := utils.KubeClient.CoreV1().Pods(obj.Namespace).Create(s)
+		_, err := utils.KubeClient.CoreV1().Pods(obj.Namespace).Create(context.TODO(), s, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create pod: %v", err)
 		}
 	case "service":
 		s := obj.Specs.(*v1.Service)
-		_, err := utils.KubeClient.CoreV1().Services(obj.Namespace).Create(s)
+		_, err := utils.KubeClient.CoreV1().Services(obj.Namespace).Create(context.TODO(), s, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create service: %v", err)
 		}
 	case "ingress":
 		s := obj.Specs.(*networkV1beta1.Ingress)
-		_, err := utils.KubeClient.NetworkingV1beta1().Ingresses(obj.Namespace).Create(s)
+		_, err := utils.KubeClient.NetworkingV1beta1().Ingresses(obj.Namespace).Create(context.TODO(), s, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create service: %v", err)
 		}
 	case "namespace":
 		s := obj.Specs.(*v1.Namespace)
-		_, err := utils.KubeClient.CoreV1().Namespaces().Create(s)
+		_, err := utils.KubeClient.CoreV1().Namespaces().Create(context.TODO(), s, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create service: %v", err)
 		}

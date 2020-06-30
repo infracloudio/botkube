@@ -23,6 +23,8 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/apiserver/pkg/apis/audit"
+
 	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/events"
 	"github.com/infracloudio/botkube/pkg/log"
@@ -31,29 +33,27 @@ import (
 
 // ElasticSearch contains auth cred and index setting
 type ElasticSearch struct {
-	ELSClient   *elastic.Client
-	Server      string
-	Index       string
-	Shards      int
-	Replicas    int
-	Type        string
-	ClusterName string
+	ELSClient *elastic.Client
+	Server    string
+	Index     string
+	Shards    int
+	Replicas  int
+	Type      string
 }
 
 // NewElasticSearch returns new ElasticSearch object
-func NewElasticSearch(c *config.Config) (Notifier, error) {
+func NewElasticSearch(c config.ElasticSearch) (*ElasticSearch, error) {
 	// create elasticsearch client
-	elsClient, err := elastic.NewClient(elastic.SetURL(c.Communications.ElasticSearch.Server), elastic.SetBasicAuth(c.Communications.ElasticSearch.Username, c.Communications.ElasticSearch.Password), elastic.SetSniff(false), elastic.SetHealthcheck(false), elastic.SetGzip(true))
+	elsClient, err := elastic.NewClient(elastic.SetURL(c.Server), elastic.SetBasicAuth(c.Username, c.Password), elastic.SetSniff(false), elastic.SetHealthcheck(false), elastic.SetGzip(true))
 	if err != nil {
 		return nil, err
 	}
 	return &ElasticSearch{
-		ELSClient:   elsClient,
-		Index:       c.Communications.ElasticSearch.Index.Name,
-		Type:        c.Communications.ElasticSearch.Index.Type,
-		Shards:      c.Communications.ElasticSearch.Index.Shards,
-		Replicas:    c.Communications.ElasticSearch.Index.Replicas,
-		ClusterName: c.Settings.ClusterName,
+		ELSClient: elsClient,
+		Index:     c.Index.Name,
+		Type:      c.Index.Type,
+		Shards:    c.Index.Shards,
+		Replicas:  c.Index.Replicas,
 	}, nil
 }
 
@@ -69,14 +69,7 @@ type index struct {
 	Replicas int `json:"number_of_replicas"`
 }
 
-// SendEvent sends event notification to slack
-func (e *ElasticSearch) SendEvent(event events.Event) (err error) {
-	log.Debug(fmt.Sprintf(">> Sending to ElasticSearch: %+v", event))
-	ctx := context.Background()
-
-	// set missing cluster name to event object
-	event.Cluster = e.ClusterName
-
+func (e *ElasticSearch) flushIndex(ctx context.Context, event interface{}) error {
 	// Create index if not exists
 	exists, err := e.ELSClient.IndexExists(e.Index).Do(ctx)
 	if err != nil {
@@ -112,6 +105,32 @@ func (e *ElasticSearch) SendEvent(event events.Event) (err error) {
 		return err
 	}
 	log.Debugf("Event successfully sent to ElasticSearch index %s", e.Index)
+	return nil
+}
+
+// SendEvent sends event notification to slack
+func (e *ElasticSearch) SendEvent(event events.Event) (err error) {
+	log.Debug(fmt.Sprintf(">> Sending to ElasticSearch: %+v", event))
+	ctx := context.Background()
+
+	// Create index if not exists
+	if err := e.flushIndex(ctx, event); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// SendAuditEvent sends audit event to sink
+// TODO: Create interface for audit events
+func (e *ElasticSearch) SendAuditEvent(event audit.Event) error {
+	log.Debug(fmt.Sprintf(">> Sending to ElasticSearch: %+v", event))
+	ctx := context.Background()
+
+	// Create index if not exists
+	if err := e.flushIndex(ctx, event); err != nil {
+		return err
+	}
 	return nil
 }
 

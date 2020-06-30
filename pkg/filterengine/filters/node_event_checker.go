@@ -68,10 +68,10 @@ func (f NodeEventsChecker) Run(object interface{}, event *events.Event) {
 	switch event.Reason {
 	case NodeNotReady:
 		event.Type = config.ErrorEvent
-		event.Level = events.Critical
+		event.Level = config.Critical
 	case NodeReady:
 		event.Type = config.InfoEvent
-		event.Level = events.Info
+		event.Level = config.Info
 	default:
 		// skip events with least significant reasons
 		event.Skip = true

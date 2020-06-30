@@ -20,6 +20,7 @@
 package utils
 
 import (
+	"context"
 	"os"
 	"regexp"
 	"strconv"
@@ -313,110 +314,110 @@ func ExtractAnnotaions(obj *coreV1.Event) map[string]string {
 
 	switch obj.InvolvedObject.Kind {
 	case "Pod":
-		object, err := KubeClient.CoreV1().Pods(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().Pods(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Node":
-		object, err := KubeClient.CoreV1().Nodes().Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().Nodes().Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Namespace":
-		object, err := KubeClient.CoreV1().Namespaces().Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().Namespaces().Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "PersistentVolume":
-		object, err := KubeClient.CoreV1().PersistentVolumes().Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().PersistentVolumes().Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "PersistentVolumeClaim":
-		object, err := KubeClient.CoreV1().PersistentVolumeClaims(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().PersistentVolumeClaims(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "ReplicationController":
-		object, err := KubeClient.CoreV1().ReplicationControllers(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().ReplicationControllers(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Service":
-		object, err := KubeClient.CoreV1().Services(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().Services(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Secret":
-		object, err := KubeClient.CoreV1().Secrets(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().Secrets(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "ConfigMap":
-		object, err := KubeClient.CoreV1().ConfigMaps(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.CoreV1().ConfigMaps(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "DaemonSet":
-		object, err := KubeClient.ExtensionsV1beta1().DaemonSets(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.ExtensionsV1beta1().DaemonSets(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Ingress":
-		object, err := KubeClient.ExtensionsV1beta1().Ingresses(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.ExtensionsV1beta1().Ingresses(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 
 	case "ReplicaSet":
-		object, err := KubeClient.ExtensionsV1beta1().ReplicaSets(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.ExtensionsV1beta1().ReplicaSets(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Deployment":
-		object, err := KubeClient.ExtensionsV1beta1().Deployments(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.ExtensionsV1beta1().Deployments(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Job":
-		object, err := KubeClient.BatchV1().Jobs(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.BatchV1().Jobs(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "Role":
-		object, err := KubeClient.RbacV1().Roles(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.RbacV1().Roles(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "RoleBinding":
-		object, err := KubeClient.RbacV1().RoleBindings(obj.InvolvedObject.Namespace).Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.RbacV1().RoleBindings(obj.InvolvedObject.Namespace).Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "ClusterRole":
-		object, err := KubeClient.RbacV1().ClusterRoles().Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.RbacV1().ClusterRoles().Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}
 		log.Error(err)
 	case "ClusterRoleBinding":
-		object, err := KubeClient.RbacV1().ClusterRoleBindings().Get(obj.InvolvedObject.Name, metaV1.GetOptions{})
+		object, err := KubeClient.RbacV1().ClusterRoleBindings().Get(context.TODO(), obj.InvolvedObject.Name, metaV1.GetOptions{})
 		if err == nil {
 			return object.ObjectMeta.Annotations
 		}

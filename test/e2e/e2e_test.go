@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nlopes/slack"
+
 	"github.com/infracloudio/botkube/pkg/bot"
 	"github.com/infracloudio/botkube/pkg/controller"
 	"github.com/infracloudio/botkube/pkg/notify"
@@ -45,10 +47,9 @@ func TestRun(t *testing.T) {
 
 	if testEnv.Config.Communications.Slack.Enabled {
 		fakeSlackNotifier := &notify.Slack{
-			Token:     testEnv.Config.Communications.Slack.Token,
 			Channel:   testEnv.Config.Communications.Slack.Channel,
 			NotifType: testEnv.Config.Communications.Slack.NotifType,
-			SlackURL:  testEnv.SlackServer.GetAPIURL(),
+			Client:    slack.New(testEnv.Config.Communications.Slack.Token, slack.OptionAPIURL(testEnv.SlackServer.GetAPIURL())),
 		}
 
 		notifiers = append(notifiers, fakeSlackNotifier)

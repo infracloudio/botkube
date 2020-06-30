@@ -1,0 +1,61 @@
+{{- if .Values.auditWebhook.enabled -}}
+# alternate names of the services. This renders to: [ botkube-audit-webhook.namespace, botkube-audit-webhook.namespace.svc ]
+{{- $altNames := list ( printf "%s-audit-webhook.%s" (include "botkube.name" . ) .Release.Namespace ) ( printf "%s-audit-webhook.%s.svc" (include "botkube.name" .) .Release.Namespace ) }}
+# generate ca cert with 365 days of validity
+{{- $ca := genCA ( printf "%s-audit-webhook-ca" (include "botkube.name" .) ) 365 }}
+# generate cert with CN="component-audit-webhook", SAN=$altNames and with 365 days of validity
+{{- $cert := genSignedCert ( printf "%s-audit-webhook" (include "botkube.name" .) ) nil $altNames 365 $ca }}
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/tls
+metadata:
+  name: {{ include "botkube.name" . }}-audit-webhook-certs
+  labels:
+    app.kubernetes.io/name: {{ include "botkube.name" . }}
+    helm.sh/chart: {{ include "botkube.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    component: auditwebhook
+    app: botkube
+  annotations:
+    # Setting annotations to ignore cert override on helm upgrade
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-delete-policy": "before-hook-creation"
+data:
+  tls.crt: {{ $cert.Cert | b64enc }}
+  tls.key: {{ $cert.Key | b64enc }}
+---
+apiVersion: auditregistration.k8s.io/v1alpha1
+kind: AuditSink
+metadata:
+  name: {{ include "botkube.name" . }}-audit-sink
+  labels:
+    app.kubernetes.io/name: {{ include "botkube.name" . }}
+    helm.sh/chart: {{ include "botkube.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    component: auditwebhook
+    app: botkube
+  annotations:
+    # Setting annotations to ignore cert override on helm upgrade
+    "helm.sh/hook": "pre-install"
+    "helm.sh/hook-delete-policy": "before-hook-creation"
+spec:
+  policy:
+    level: Metadata
+    stages:
+  {{- with .Values.auditWebhook.stages }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  webhook:
+    throttle:
+      qps: 10
+      burst: 15
+    clientConfig:
+      service:
+        namespace: {{ .Release.Namespace }}
+        name: {{ include "botkube.fullname" . }}-audit-webhook
+        path: /v1/audit
+        port: 443
+      caBundle: {{ b64enc $ca.Cert }}
+{{- end }}

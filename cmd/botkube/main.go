@@ -21,8 +21,12 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
+	"github.com/spf13/cobra"
+
+	"github.com/infracloudio/botkube/pkg/audit"
 	"github.com/infracloudio/botkube/pkg/bot"
 	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/controller"
@@ -34,13 +38,58 @@ import (
 
 const (
 	defaultMetricsPort = "2112"
+	Path               = "/v1/audit"
 )
 
+var (
+	// rootCmd represents the base command when called without any subcommands
+	rootCmd = &cobra.Command{
+		Use:   "botkube",
+		Short: "Monitor Kubernetes resource lifecycle and audit events.",
+	}
+
+	botkubeController = &cobra.Command{
+		Use:   "controller",
+		Short: "Start watcher on resource lifecycle events and listen for incoming message.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return startController()
+		},
+	}
+
+	// containersCmd represents the containers command
+	auditWebhook = &cobra.Command{
+		Use:   "auditwebhook",
+		Short: "Start watcher on audit events, filter and send them to configured sink and notifiers.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return startAuditWhServer()
+		},
+	}
+)
+
+func init() {
+	rootCmd.AddCommand(botkubeController)
+	rootCmd.AddCommand(auditWebhook)
+}
+
 func main() {
+	// Prometheus metrics
+	metricsPort, exists := os.LookupEnv("METRICS_PORT")
+	if !exists {
+		metricsPort = defaultMetricsPort
+	}
+	go metrics.ServeMetrics(metricsPort)
+
+	if err := rootCmd.Execute(); err != nil {
+		log.Error(err)
+		os.Exit(1)
+	}
+}
+
+func startController() error {
 	log.Info("Starting controller")
 	conf, err := config.New()
 	if err != nil {
-		log.Fatal(fmt.Sprintf("Error in loading configuration. Error:%s", err.Error()))
+		return fmt.Errorf("Error in loading configuration. Error:%s", err.Error())
 	}
 
 	if conf.Communications.Slack.Enabled {
@@ -55,14 +104,8 @@ func main() {
 		go mb.Start()
 	}
 
-	// Prometheus metrics
-	metricsPort, exists := os.LookupEnv("METRICS_PORT")
-	if !exists {
-		metricsPort = defaultMetricsPort
-	}
-	go metrics.ServeMetrics(metricsPort)
-
-	notifiers := listNotifiers(conf)
+	notifiers := notify.ListNotifiers(conf.Communications)
+	log.Infof("Notifier List: config=%#v list=%#v\n", conf.Communications, notifiers)
 	// Start upgrade notifier
 	if conf.Settings.UpgradeNotifier {
 		log.Info("Starting upgrade notifier")
@@ -74,29 +117,16 @@ func main() {
 	utils.InitInformerMap(conf)
 	utils.InitResourceMap(conf)
 	controller.RegisterInformers(conf, notifiers)
+	return nil
 }
 
-func listNotifiers(conf *config.Config) []notify.Notifier {
-	var notifiers []notify.Notifier
-	if conf.Communications.Slack.Enabled {
-		notifiers = append(notifiers, notify.NewSlack(conf))
+func startAuditWhServer() error {
+	config := config.NewAuditServerConfig()
+	log.Infof("Started accepting requests on port=%s", config.Port)
+	whHandler, err := audit.NewWebhookHandler()
+	if err != nil {
+		log.Fatal(err)
 	}
-	if conf.Communications.Mattermost.Enabled {
-		if notifier, err := notify.NewMattermost(conf); err == nil {
-			notifiers = append(notifiers, notifier)
-		} else {
-			log.Error(fmt.Sprintf("Failed to create Mattermost client. Error: %v", err))
-		}
-	}
-	if conf.Communications.ElasticSearch.Enabled {
-		if els, err := notify.NewElasticSearch(conf); err == nil {
-			notifiers = append(notifiers, els)
-		} else {
-			log.Error(fmt.Sprintf("Failed to create els client. Error: %v", err))
-		}
-	}
-	if conf.Communications.Webhook.Enabled {
-		notifiers = append(notifiers, notify.NewWebhook(conf))
-	}
-	return notifiers
+	http.HandleFunc(Path, whHandler.HandlePost)
+	return http.ListenAndServeTLS(":"+config.Port, config.TLSCert, config.TLSKey, nil)
 }

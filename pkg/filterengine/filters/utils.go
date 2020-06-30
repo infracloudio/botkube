@@ -20,6 +20,7 @@
 package filters
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -31,13 +32,13 @@ import (
 // ValidService returns Service object is service given service exists in the given namespace
 func ValidService(name, namespace string) (*coreV1.Service, error) {
 	serviceClient := utils.KubeClient.CoreV1().Services(namespace)
-	return serviceClient.Get(name, metaV1.GetOptions{})
+	return serviceClient.Get(context.TODO(), name, metaV1.GetOptions{})
 }
 
 // ValidServicePort returns valid Service object if given service with the port exists in the given namespace
 func ValidServicePort(name, namespace string, port int32) (*coreV1.Service, error) {
 	serviceClient := utils.KubeClient.CoreV1().Services(namespace)
-	service, err := serviceClient.Get(name, metaV1.GetOptions{})
+	service, err := serviceClient.Get(context.TODO(), name, metaV1.GetOptions{})
 	if err != nil {
 		return service, err
 	}
@@ -52,7 +53,7 @@ func ValidServicePort(name, namespace string, port int32) (*coreV1.Service, erro
 // ValidSecret return Secret object if the secret is present in the specified object
 func ValidSecret(name, namespace string) (*coreV1.Secret, error) {
 	secretClient := utils.KubeClient.CoreV1().Secrets(namespace)
-	return secretClient.Get(name, metaV1.GetOptions{})
+	return secretClient.Get(context.TODO(), name, metaV1.GetOptions{})
 }
 
 // FindNamespaceFromService returns namespace from fully qualified domain name
