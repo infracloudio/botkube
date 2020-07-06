@@ -6,7 +6,14 @@ communications:
     channel: 'SLACK_CHANNEL'
     token: 'SLACK_API_TOKEN'
     notiftype: short                           # Change notification type short/long you want to receive. notiftype is optional and Default notification type is short (if not specified)
-  
+  # Settings for telegram
+  telegram:
+    enabled: false
+    token: 'TELEGRAM_API_TOKEN'
+    notiftype: short                           # Change notification type short/long you want to receive. notiftype is optional and Default notification type is short (if not specified)
+    groupid : 'TELEGRAM_GROUPID' # groupID or userID. If it positive value is not working try a negative number
+    debug: true # Prints all the messages recieved
+
   # Settings for Mattermost
   mattermost:
     enabled: false
