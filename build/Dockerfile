@@ -18,15 +18,17 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 # Development image
-FROM golang:1.13-alpine3.10 AS BUILD-ENV
+FROM golang:1.12-alpine3.10 AS build
 
-ARG GOOS_VAL 
-ARG GOARCH_VAL
+ARG TARGETPLATFORM
+
+WORKDIR /app
+
+ENV GO111MODULE=on \
+    CGO_ENABLED=0
 
 # Add git
 RUN apk update && apk add git curl
-
-WORKDIR /app
 
 # Download dependencies
 COPY go.mod go.sum ./
@@ -36,11 +38,15 @@ RUN go mod download
 COPY . .
 
 # Build binary
-RUN GOOS=${GOOS_VAL} GOARCH=${GOARCH_VAL} go build -o /go/bin/botkube ./cmd/botkube 
+RUN export GOOS=$(echo ${TARGETPLATFORM} | cut -d / -f1) && \
+    export GOARCH=$(echo ${TARGETPLATFORM} | cut -d / -f2) && \
+    GOARM=$(echo ${TARGETPLATFORM} | cut -d / -f3 | cut -c2-) && \
+    go build -o /go/bin/botkube ./cmd/botkube
 
 # Install kubectl binary
-RUN apk add --no-cache ca-certificates git \
-    && wget -q https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl -O /usr/local/bin/kubectl \
+RUN export GOARCH=$(echo ${TARGETPLATFORM} | cut -d / -f2) && \
+    apk add --no-cache ca-certificates git \
+    && wget -q https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/${GOARCH}/kubectl -O /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl
 
 # Production image
@@ -53,8 +59,8 @@ RUN addgroup --gid 101 botkube && \
 # Run as Non Privilaged user
 USER botkube
 
-COPY --from=BUILD-ENV /go/bin/botkube /go/bin/botkube
-COPY --from=BUILD-ENV /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=BUILD-ENV /usr/local/bin/kubectl /usr/local/bin/kubectl
+COPY --from=build /go/bin/botkube /go/bin/botkube
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/local/bin/kubectl /usr/local/bin/kubectl
 
 ENTRYPOINT /go/bin/botkube
