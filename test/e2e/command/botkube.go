@@ -34,7 +34,8 @@ import (
 
 	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/execute"
-	"github.com/infracloudio/botkube/test/e2e/utils"
+	"github.com/infracloudio/botkube/pkg/utils"
+	testutils "github.com/infracloudio/botkube/test/e2e/utils"
 )
 
 type botkubeCommand struct {
@@ -86,28 +87,30 @@ func (c *context) testBotkubeCommand(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+
 			if c.TestEnv.Config.Communications.Slack.Enabled {
-
 				// Send message to a channel
-				c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, test.command)
+				for _, accessBinding := range c.TestEnv.Config.Communications.Slack.AccessBindings {
 
-				// Get last seen slack message
-				lastSeenMsg := c.GetLastSeenSlackMessage()
+					c.SlackServer.SendMessageToBot(accessBinding.ChannelName, test.command)
+					// Get last seen slack message
+					lastSeenMsg := c.GetLastSeenSlackMessage(1)
 
-				// Convert text message into Slack message structure
-				m := slack.Message{}
-				err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-				assert.NoError(t, err, "message should decode properly")
-				assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
-				switch test.command {
-				case "filters list":
-					fl := compareFilters(strings.Split(test.expected, "\n"), strings.Split(strings.Trim(m.Text, "```"), "\n"))
-					assert.Equal(t, fl, true)
-				case "commands list":
-					cl := compareFilters(strings.Split(test.expected, "\n"), strings.Split(strings.Trim(m.Text, "```"), "\n"))
-					assert.Equal(t, cl, true)
-				default:
-					assert.Equal(t, test.expected, m.Text)
+					// Convert text message into Slack message structure
+					m := slack.Message{}
+					err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+					assert.NoError(t, err, "message should decode properly")
+					assert.Equal(t, accessBinding.ChannelName, m.Channel)
+					switch test.command {
+					case "filters list":
+						fl := compareFilters(strings.Split(test.expected, "\n"), strings.Split(strings.Trim(m.Text, "```"), "\n"))
+						assert.Equal(t, fl, true)
+					case "commands list":
+						cl := compareFilters(strings.Split(test.expected, "\n"), strings.Split(strings.Trim(m.Text, "```"), "\n"))
+						assert.Equal(t, cl, true)
+					default:
+						assert.Equal(t, test.expected, m.Text)
+					}
 				}
 			}
 		})
@@ -144,64 +147,74 @@ func (c *context) testNotifierCommand(t *testing.T) {
 	t.Run("disable notifier", func(t *testing.T) {
 		if c.TestEnv.Config.Communications.Slack.Enabled {
 			// Send message to a channel
-			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "notifier stop")
+			for _, accessBinding := range c.TestEnv.Config.Communications.Slack.AccessBindings {
+				c.SlackServer.SendMessageToBot(accessBinding.ChannelName, "notifier stop")
+				// Get last seen slack message
+				lastSeenMsg := c.GetLastSeenSlackMessage(1)
 
-			// Get last seen slack message
-			lastSeenMsg := c.GetLastSeenSlackMessage()
+				// Convert text message into Slack message structure
+				m := slack.Message{}
+				err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+				assert.NoError(t, err, "message should decode properly")
+				assert.Equal(t, accessBinding.ChannelName, m.Channel)
+				assert.Equal(t, fmt.Sprintf("```Sure! I won't send you notifications from cluster '%s' anymore.```", c.Config.Settings.ClusterName), m.Text)
+				assert.Equal(t, config.Notify, false)
 
-			// Convert text message into Slack message structure
-			m := slack.Message{}
-			err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-			assert.NoError(t, err, "message should decode properly")
-			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
-			assert.Equal(t, fmt.Sprintf("```Sure! I won't send you notifications from cluster '%s' anymore.```", c.Config.Settings.ClusterName), m.Text)
-			assert.Equal(t, config.Notify, false)
+			}
 		}
 	})
 
 	// Create pod and verify that BotKube is not sending notifications
-	pod := utils.CreateObjects{
+	pod := testutils.CreateObjects{
 		GVR:       schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
 		Kind:      "Pod",
 		Namespace: "test",
 		Specs:     &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod-notifier"}},
-		ExpectedSlackMessage: utils.SlackMessage{
+		ExpectedSlackMessage: testutils.SlackMessage{
 			Attachments: []slack.Attachment{{Color: "good", Fields: []slack.AttachmentField{{Title: "Pod create", Value: "Pod `test-pod` in of cluster `test-cluster-1`, namespace `test` has been created:\n```Resource created\nRecommendations:\n- pod 'test-pod' creation without labels should be avoided.\n```", Short: false}}, Footer: "BotKube"}},
 		},
 	}
 	t.Run("create resource", func(t *testing.T) {
 		// Inject an event into the fake client.
-		utils.CreateResource(t, pod)
+		testutils.CreateResource(t, pod)
 
 		if c.TestEnv.Config.Communications.Slack.Enabled {
-			// Get last seen slack message
-			lastSeenMsg := c.GetLastSeenSlackMessage()
+			for i := range c.Config.Communications.Slack.AccessBindings {
 
-			// Convert text message into Slack message structure
-			m := slack.Message{}
-			err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-			assert.NoError(t, err, "message should decode properly")
-			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
-			assert.NotEqual(t, pod.ExpectedSlackMessage.Attachments, m.Attachments)
+				// Get last seen slack message
+				lastSeenMsg := c.GetLastSeenSlackMessage(i + 1)
+				// Convert text message into Slack message structure
+				m := slack.Message{}
+				err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+				assert.NoError(t, err, "message should decode properly")
+				assert.NotEqual(t, pod.ExpectedSlackMessage.Attachments, m.Attachments)
+				// since same message is sent to all the channels, we are comparing
+				// that the each new message received on slack must be configured under AccessBindings,
+				// and also  all new messages must be same as expacted one\
+				validChannel := utils.Contains(utils.GetAllChannels(&c.TestEnv.Config.Communications.Slack.AccessBindings), m.Channel)
+				assert.Equal(t, validChannel, true)
+			}
 		}
 	})
 
 	// Revert and Enable notifier
 	t.Run("Enable notifier", func(t *testing.T) {
 		if c.TestEnv.Config.Communications.Slack.Enabled {
-			// Send message to a channel
-			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "notifier start")
+			for _, accessBinding := range c.TestEnv.Config.Communications.Slack.AccessBindings {
+				// Send message to a channel
+				c.SlackServer.SendMessageToBot(accessBinding.ChannelName, "notifier start")
 
-			// Get last seen slack message
-			lastSeenMsg := c.GetLastSeenSlackMessage()
+				// Get last seen slack message
+				lastSeenMsg := c.GetLastSeenSlackMessage(1)
 
-			// Convert text message into Slack message structure
-			m := slack.Message{}
-			err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-			assert.NoError(t, err, "message should decode properly")
-			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
-			assert.Equal(t, fmt.Sprintf("```Brace yourselves, notifications are coming from cluster '%s'.```", c.Config.Settings.ClusterName), m.Text)
-			assert.Equal(t, config.Notify, true)
+				// Convert text message into Slack message structure
+				m := slack.Message{}
+				err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+				assert.NoError(t, err, "message should decode properly")
+				assert.Equal(t, accessBinding.ChannelName, m.Channel)
+				assert.Equal(t, fmt.Sprintf("```Brace yourselves, notifications are coming from cluster '%s'.```", c.Config.Settings.ClusterName), m.Text)
+				assert.Equal(t, config.Notify, true)
+			}
 		}
 	})
 }

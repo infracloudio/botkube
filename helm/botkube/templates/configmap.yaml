@@ -9,7 +9,12 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
   resource_config.yaml: |
-  {{- with .Values.config }}
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- with .Values.config }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  access_config.yaml: |
+    {{- with .Values.accessConfig }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}  
 

@@ -35,7 +35,7 @@ type DiscordBot struct {
 	AllowKubectl     bool
 	RestrictAccess   bool
 	ClusterName      string
-	ChannelID        string
+	AccessBindings   []config.AccessBinding
 	BotID            string
 	DefaultNamespace string
 }
@@ -58,7 +58,7 @@ func NewDiscordBot(c *config.Config) Bot {
 		AllowKubectl:     c.Settings.Kubectl.Enabled,
 		RestrictAccess:   c.Settings.Kubectl.RestrictAccess,
 		ClusterName:      c.Settings.ClusterName,
-		ChannelID:        c.Communications.Discord.Channel,
+		AccessBindings:   c.Communications.Discord.AccessBindings,
 		DefaultNamespace: c.Settings.Kubectl.DefaultNamespace,
 	}
 }
@@ -96,15 +96,10 @@ func (b *DiscordBot) Start() {
 
 // HandleMessage handles the incoming messages
 func (dm *discordMessage) HandleMessage(b *DiscordBot) {
-
+	accessBinding := config.AccessBinding{}
 	// Serve only if starts with mention
 	if !strings.HasPrefix(dm.Event.Content, "<@!"+dm.BotID+"> ") && !strings.HasPrefix(dm.Event.Content, "<@"+dm.BotID+"> ") {
 		return
-	}
-
-	// Serve only if current channel is in config
-	if b.ChannelID == dm.Event.ChannelID {
-		dm.IsAuthChannel = true
 	}
 
 	// Trim the @BotKube prefix
@@ -118,8 +113,16 @@ func (dm *discordMessage) HandleMessage(b *DiscordBot) {
 		return
 	}
 
+	for _, accessBind := range b.AccessBindings {
+		if accessBind.ChannelName == dm.Event.ChannelID {
+			dm.IsAuthChannel = true
+			accessBinding = accessBind
+			break
+		}
+	}
+
 	e := execute.NewDefaultExecutor(dm.Request, b.AllowKubectl, b.RestrictAccess, b.DefaultNamespace,
-		b.ClusterName, config.DiscordBot, b.ChannelID, dm.IsAuthChannel)
+		b.ClusterName, accessBinding.ProfileValue, config.DiscordBot, accessBinding.ChannelName, dm.IsAuthChannel)
 
 	dm.Response = e.Execute()
 	dm.Send()

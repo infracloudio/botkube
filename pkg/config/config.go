@@ -20,10 +20,12 @@
 package config
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	"github.com/infracloudio/botkube/pkg/log"
 	"gopkg.in/yaml.v2"
 )
 
@@ -85,6 +87,9 @@ var ResourceConfigFileName = "resource_config.yaml"
 // CommunicationConfigFileName is a name of BotKube communication configuration file
 var CommunicationConfigFileName = "comm_config.yaml"
 
+// AccessConfigFileName is a name of botkube profile configuration file
+var AccessConfigFileName = "access_config.yaml"
+
 // Notify flag to toggle event notification
 var Notify = true
 
@@ -142,10 +147,48 @@ type CommunicationsConfig struct {
 
 // Slack configuration to authentication and send notifications
 type Slack struct {
-	Enabled   bool
-	Channel   string
-	NotifType NotifType `yaml:",omitempty"`
-	Token     string    `yaml:",omitempty"`
+	Enabled        bool
+	Channel        string
+	NotifType      NotifType       `yaml:",omitempty"`
+	Token          string          `yaml:",omitempty"`
+	AccessBindings []AccessBinding `yaml:"accessBindings"`
+}
+
+// AccessBinding maps channel to profile
+type AccessBinding struct {
+	ChannelName  string `yaml:"channelName"`
+	ProfileName  string `yaml:"profile"`
+	ProfileValue Profile
+}
+
+// Profile defines access limitation for a specific channel
+type Profile struct {
+	Name                      string
+	Namespaces                []string `yaml:"namespaces"`
+	Kubectl                   Kubectl
+	AllowedKubectlResourceMap map[string]bool
+}
+
+// AllProfiles contain all defined profiles
+type AllProfiles struct {
+	Profiles []Profile
+}
+
+// getProfile will return specific profile out of all defined profiles based on supplied profile name including correct value of AllowedKubectlResourceMap
+func (all AllProfiles) getProfile(profileName string) (Profile, error) {
+	p := Profile{}
+	for _, profile := range all.Profiles {
+		if profile.Name == profileName {
+			allowedKubectlResourceMap := make(map[string]bool)
+			for _, r := range profile.Kubectl.Commands.Resources {
+				allowedKubectlResourceMap[r] = true
+			}
+			profile.AllowedKubectlResourceMap = allowedKubectlResourceMap
+			p = profile
+			return p, nil
+		}
+	}
+	return p, errors.New("Selected profile not found in the provided profiles")
 }
 
 // ElasticSearch config auth settings
@@ -175,12 +218,13 @@ type Index struct {
 
 // Mattermost configuration to authentication and send notifications
 type Mattermost struct {
-	Enabled   bool
-	URL       string
-	Token     string
-	Team      string
-	Channel   string
-	NotifType NotifType `yaml:",omitempty"`
+	Enabled        bool
+	Channel        string
+	URL            string
+	Token          string
+	Team           string
+	NotifType      NotifType       `yaml:",omitempty"`
+	AccessBindings []AccessBinding `yaml:"accessBindings"`
 }
 
 // Teams creds for authentication with MS Teams
@@ -196,11 +240,12 @@ type Teams struct {
 
 // Discord configuration for authentication and send notifications
 type Discord struct {
-	Enabled   bool
-	Token     string
-	BotID     string
-	Channel   string
-	NotifType NotifType `yaml:",omitempty"`
+	Enabled        bool
+	Token          string
+	BotID          string
+	Channel        string
+	NotifType      NotifType       `yaml:",omitempty"`
+	AccessBindings []AccessBinding `yaml:"accessBindings"`
 }
 
 // Webhook configuration to send notifications
@@ -213,8 +258,8 @@ type Webhook struct {
 type Kubectl struct {
 	Enabled          bool
 	Commands         Commands
-	DefaultNamespace string
-	RestrictAccess   bool `yaml:"restrictAccess"`
+	DefaultNamespace string `yaml:"defaultNamespace"`
+	RestrictAccess   bool   `yaml:"restrictAccess"`
 }
 
 // Commands allowed in bot
@@ -235,6 +280,21 @@ func (eventType EventType) String() string {
 	return string(eventType)
 }
 
+// DefaultAccessBindings returns the default value of of single length AccessBindings by channel name
+func DefaultAccessBindings(channel string, kubectlValue Kubectl) *[]AccessBinding {
+	defaultValue := []AccessBinding{}
+	profileValue := *new(Profile)
+	profileValue.Name = "BOTKUBE_ADMIN"
+	profileValue.Namespaces = []string{"default", "kube-system"}
+	profileValue.Kubectl = kubectlValue
+	accessBindingValue := new(AccessBinding)
+	accessBindingValue.ChannelName = channel
+	accessBindingValue.ProfileName = "BOTKUBE_ADMIN"
+	accessBindingValue.ProfileValue = profileValue //{Name: "BOTKUBE_ADMIN", Namespaces: [kube-system],Kubectl: new(Kubectl)}
+	defaultValue = append(defaultValue, *accessBindingValue)
+	return &defaultValue
+}
+
 // NewCommunicationsConfig return new communication config object
 func NewCommunicationsConfig() (*Communications, error) {
 	c := &Communications{}
@@ -242,6 +302,7 @@ func NewCommunicationsConfig() (*Communications, error) {
 	communicationConfigFilePath := filepath.Join(configPath, CommunicationConfigFileName)
 	communicationConfigFile, err := os.Open(communicationConfigFilePath)
 	defer communicationConfigFile.Close()
+
 	if err != nil {
 		return c, err
 	}
@@ -252,7 +313,10 @@ func NewCommunicationsConfig() (*Communications, error) {
 	}
 
 	if len(b) != 0 {
-		yaml.Unmarshal(b, c)
+		err = yaml.Unmarshal(b, c)
+		if err != nil {
+			return c, err
+		}
 	}
 	return c, nil
 }
@@ -274,14 +338,108 @@ func New() (*Config, error) {
 	}
 
 	if len(b) != 0 {
-		yaml.Unmarshal(b, c)
+		err = yaml.Unmarshal(b, c)
+		if err != nil {
+			return c, err
+		}
 	}
-
 	comm, err := NewCommunicationsConfig()
 	if err != nil {
 		return nil, err
 	}
 	c.Communications = comm.Communications
 
+	accessConfigFilePath := filepath.Join(configPath, AccessConfigFileName)
+	accessConfigFile, err := os.Open(accessConfigFilePath)
+	defer accessConfigFile.Close()
+	if err != nil {
+		log.Infof("AccessConfig file not found")
+
+		if (c.Communications.Slack.Enabled && c.Communications.Slack.Channel != "") || (c.Communications.Mattermost.Enabled && c.Communications.Mattermost.Channel != "") {
+			log.Warn("Configuration provided as used in older version of botkube")
+			log.Warn("Check the updated configuration at: https://www.botkube.io/configuration/")
+			log.Warn("setting default profile values to proceed")
+
+			if c.Communications.Slack.Enabled {
+				c.Communications.Slack.AccessBindings = *DefaultAccessBindings(c.Communications.Slack.Channel, c.Settings.Kubectl)
+			}
+			if c.Communications.Mattermost.Enabled {
+				c.Communications.Mattermost.AccessBindings = *DefaultAccessBindings(c.Communications.Mattermost.Channel, c.Settings.Kubectl)
+			}
+
+			return c, nil
+		} else if !c.Communications.Slack.Enabled && !c.Communications.Mattermost.Enabled {
+			return c, nil
+		} else {
+			return c, err
+		}
+	}
+
+	b, err = ioutil.ReadAll(accessConfigFile)
+	if err != nil {
+		return c, err
+	}
+	profiles := &AllProfiles{}
+	if len(b) != 0 {
+		err = yaml.Unmarshal(b, profiles)
+		if err != nil {
+			return c, err
+		}
+	}
+	// Map right profile's value with config: For slack
+	if c.Communications.Slack.Enabled {
+		for i, accessBind := range c.Communications.Slack.AccessBindings {
+			c.Communications.Slack.AccessBindings[i].ProfileValue, err = profiles.getProfile(accessBind.ProfileName)
+			if err != nil {
+				return c, err
+			}
+		}
+	}
+
+	// Map right profile's value with config: For mattermost
+	if c.Communications.Mattermost.Enabled {
+		for i, accessBind := range c.Communications.Mattermost.AccessBindings {
+			c.Communications.Mattermost.AccessBindings[i].ProfileValue, err = profiles.getProfile(accessBind.ProfileName)
+			if err != nil {
+				return c, err
+			}
+		}
+	}
+	// Map right profile's value with config: For discord
+	if c.Communications.Discord.Enabled {
+		for i, accessBind := range c.Communications.Discord.AccessBindings {
+			c.Communications.Discord.AccessBindings[i].ProfileValue, err = profiles.getProfile(accessBind.ProfileName)
+			if err != nil {
+				return c, err
+			}
+		}
+	}
+
 	return c, nil
+}
+
+// GetAllProfiles returns All profiles specified in accessConfigFile
+func GetAllProfiles() (*AllProfiles, error) {
+	profiles := &AllProfiles{}
+	configPath := os.Getenv("CONFIG_PATH")
+	accessConfigFilePath := filepath.Join(configPath, AccessConfigFileName)
+	accessConfigFile, err := os.Open(accessConfigFilePath)
+	defer accessConfigFile.Close()
+	if err != nil {
+		log.Infof("AccessConfig file not found")
+		return profiles, err
+	}
+
+	b, err := ioutil.ReadAll(accessConfigFile)
+	if err != nil {
+		return profiles, err
+	}
+	if len(b) != 0 {
+		err = yaml.Unmarshal(b, profiles)
+		if err != nil {
+			return profiles, err
+		}
+		return profiles, nil
+	}
+	return profiles, err
 }

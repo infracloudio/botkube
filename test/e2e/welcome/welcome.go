@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/infracloudio/botkube/pkg/utils"
 	"github.com/infracloudio/botkube/test/e2e/env"
 	"github.com/nlopes/slack"
 	"github.com/stretchr/testify/assert"
@@ -37,16 +38,21 @@ func (c *context) testWelcome(t *testing.T) {
 	expected := "...and now my watch begins for cluster 'test-cluster-1'! :crossed_swords:"
 
 	if c.TestEnv.Config.Communications.Slack.Enabled {
-
-		// Get last seen slack message
-		lastSeenMsg := c.GetLastSeenSlackMessage()
-
-		// Convert text message into Slack message structure
-		m := slack.Message{}
-		err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-		assert.NoError(t, err, "message should decode properly")
-		assert.Equal(t, c.TestEnv.Config.Communications.Slack.Channel, m.Channel)
-		assert.Equal(t, expected, m.Text)
+		// To validate welcome message was sent on all channels
+		for i := range c.TestEnv.Config.Communications.Slack.AccessBindings {
+			// Get the last seen message on all configured channels one by one
+			lastSeenMsg := c.GetLastSeenSlackMessage(i + 1)
+			// Convert text message into Slack message structure
+			m := slack.Message{}
+			err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+			assert.NoError(t, err, "message should decode properly")
+			assert.Equal(t, expected, m.Text)
+			// since same message is sent to all the channels, we are comparing
+			// that the each new message received on slack must be configured under AccessBindings,
+			// and also  all new messages must be same as expacted one\
+			validChannel := utils.Contains(utils.GetAllChannels(&c.TestEnv.Config.Communications.Slack.AccessBindings), m.Channel)
+			assert.Equal(t, validChannel, true)
+		}
 	}
 }
 

@@ -198,9 +198,11 @@ func (t *Teams) processActivity(w http.ResponseWriter, req *http.Request) {
 				return schema.Activity{}, err
 			}
 
+			// passing a zero value config profile
+			profile := config.Profile{}
 			msg := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(consentCtx.Command), "<at>BotKube</at>"))
 			e := execute.NewDefaultExecutor(msg, t.AllowKubectl, t.RestrictAccess, t.DefaultNamespace,
-				t.ClusterName, config.TeamsBot, "", true)
+				t.ClusterName, profile, config.TeamsBot, "", true)
 			out := e.Execute()
 
 			actJSON, _ := json.MarshalIndent(turn.Activity, "", "  ")
@@ -256,9 +258,11 @@ func (t *Teams) processMessage(activity schema.Activity) string {
 		}
 	}
 
+	// passing a zero value config profile
+	profile := config.Profile{}
 	// Multicluster is not supported for Teams
 	e := execute.NewDefaultExecutor(msg, t.AllowKubectl, t.RestrictAccess, t.DefaultNamespace,
-		t.ClusterName, config.TeamsBot, "", true)
+		t.ClusterName, profile, config.TeamsBot, "", true)
 	return fmt.Sprintf("```\n%s\n```", e.Execute())
 }
 

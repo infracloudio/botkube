@@ -20,6 +20,7 @@
 package bot
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/infracloudio/botkube/pkg/config"
@@ -34,7 +35,7 @@ type SlackBot struct {
 	AllowKubectl     bool
 	RestrictAccess   bool
 	ClusterName      string
-	ChannelName      string
+	AccessBindings   []config.AccessBinding
 	SlackURL         string
 	BotID            string
 	DefaultNamespace string
@@ -58,7 +59,7 @@ func NewSlackBot(c *config.Config) Bot {
 		AllowKubectl:     c.Settings.Kubectl.Enabled,
 		RestrictAccess:   c.Settings.Kubectl.RestrictAccess,
 		ClusterName:      c.Settings.ClusterName,
-		ChannelName:      c.Communications.Slack.Channel,
+		AccessBindings:   c.Communications.Slack.AccessBindings,
 		DefaultNamespace: c.Settings.Kubectl.DefaultNamespace,
 	}
 }
@@ -73,7 +74,8 @@ func (b *SlackBot) Start() {
 	} else {
 		authResp, err := api.AuthTest()
 		if err != nil {
-			log.Fatal(err)
+			log.Errorf(fmt.Sprintf("%v", err))
+			return
 		}
 		botID = authResp.UserID
 	}
@@ -129,6 +131,7 @@ func (b *SlackBot) Start() {
 func (sm *slackMessage) HandleMessage(b *SlackBot) {
 	// Check if message posted in authenticated channel
 	info, err := sm.SlackClient.GetConversationInfo(sm.Event.Channel, true)
+	accessBinding := config.AccessBinding{}
 	if err == nil {
 		if info.IsChannel || info.IsPrivate {
 			// Message posted in a channel
@@ -137,21 +140,34 @@ func (sm *slackMessage) HandleMessage(b *SlackBot) {
 				return
 			}
 			// Serve only if current channel is in config
-			if b.ChannelName == info.Name {
+			for _, accessBind := range b.AccessBindings {
+				if accessBind.ChannelName == info.Name {
+					sm.IsAuthChannel = true
+					accessBinding = accessBind
+					break
+				}
+			}
+
+		}
+	} else {
+		// 'sm.Event.Channel' contain slack channel name if go tests are running
+		// but when slackbot is running 'sm.Event.Channel' contain channel ID and info.name contain the channel name
+		// Since, always There Will be err in getting 'GetConversationInfo' when go tests are running
+		// therefore assigning the values accordingly
+		for _, accessBind := range b.AccessBindings {
+			if accessBind.ChannelName == sm.Event.Channel {
 				sm.IsAuthChannel = true
+				accessBinding = accessBind
+				break
 			}
 		}
-	}
-	// Serve only if current channel is in config
-	if b.ChannelName == sm.Event.Channel {
-		sm.IsAuthChannel = true
 	}
 
 	// Trim the @BotKube prefix
 	sm.Request = strings.TrimPrefix(sm.Event.Text, "<@"+sm.BotID+">")
 
 	e := execute.NewDefaultExecutor(sm.Request, b.AllowKubectl, b.RestrictAccess, b.DefaultNamespace,
-		b.ClusterName, config.SlackBot, b.ChannelName, sm.IsAuthChannel)
+		b.ClusterName, accessBinding.ProfileValue, config.SlackBot, accessBinding.ChannelName, sm.IsAuthChannel)
 	sm.Response = e.Execute()
 	sm.Send()
 }

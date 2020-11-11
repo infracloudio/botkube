@@ -1,0 +1,42 @@
+profiles:
+
+  # Profile: BOTKUBE_ADMIN 
+  - name: 'BOTKUBE_ADMIN'
+    namespaces: ["default","kube-system"]
+    kubectl:
+      enabled: true
+      commands:
+        # method which are allowed
+        verbs: ["api-resources", "api-versions", "cluster-info", "describe", "diff", "explain", "get", "logs", "top", "auth"]
+        # resource configuration which is allowed
+        resources: [ "pods", "services","namespaces", "nodes","replicationcontrollers", "persistentvolumes", "persistentvolumeclaims", "secrets", "configmaps", "deployments", "daemonsets", "replicasets", "statefulsets", "ingresses", "jobs", "roles", "rolebindings", "clusterroles"]  
+       
+
+        
+  # based on use-case like profile for development environment
+  - name: 'DEVELOPMENT'     
+    namespaces: ["default"]
+    kubectl:
+      enabled: true
+      commands:
+        # method which are allowed
+        verbs: ["get", "logs"]   # pod is removed to test permission denaied message
+        # resource configuration which is allowed
+        resources: ["deployments", "services"]
+     
+           
+   
+  # Profile: For Production resources 
+  - name: 'PRODUCTION'
+    namespaces: ["default","kube-system"]
+    kubectl:
+      enabled: true
+      commands:
+        # method which are allowed
+        verbs: ["get", "logs", "describe", "diff", "explain", "top"]
+        # resource configuration which is allowed
+        resources: ["deployments", "pods" , "namespaces", "daemonsets", "statefulsets", "storageclasses", "nodes"]
+       
+          
+
+

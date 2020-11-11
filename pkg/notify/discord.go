@@ -41,53 +41,62 @@ var embedColor = map[config.Level]int{
 
 // Discord contains URL and ClusterName
 type Discord struct {
-	Token     string
-	ChannelID string
-	NotifType config.NotifType
+	Token          string
+	ChannelID      string
+	NotifType      config.NotifType
+	AccessBindings []config.AccessBinding
 }
 
 // NewDiscord returns new Discord object
 func NewDiscord(c config.Discord) Notifier {
 	return &Discord{
-		Token:     c.Token,
-		ChannelID: c.Channel,
-		NotifType: c.NotifType,
+		Token:          c.Token,
+		ChannelID:      c.Channel,
+		AccessBindings: c.AccessBindings,
+		NotifType:      c.NotifType,
 	}
 }
 
 // SendEvent sends event notification to Discord Channel
 func (d *Discord) SendEvent(event events.Event) (err error) {
 	log.Debug(fmt.Sprintf(">> Sending to discord: %+v", event))
-
-	api, err := discordgo.New("Bot " + d.Token)
-	if err != nil {
-		log.Error("error creating Discord session,", err)
-		return err
+	if len(event.DiscordChannels) == 0 {
+		// send to all configured channel
+		event.DiscordChannels = d.getAllChannels()
 	}
-	messageSend := formatDiscordMessage(event, d.NotifType)
+	for _, channel := range event.DiscordChannels {
+		api, err := discordgo.New("Bot " + d.Token)
+		if err != nil {
+			log.Error("error creating Discord session,", err)
+			return err
+		}
+		messageSend := formatDiscordMessage(event, d.NotifType)
 
-	if _, err := api.ChannelMessageSendComplex(d.ChannelID, &messageSend); err != nil {
-		log.Errorf("Error in sending message: %+v", err)
-		return err
+		if _, err := api.ChannelMessageSendComplex(channel, &messageSend); err != nil {
+			log.Errorf("Error in sending message: %+v", err)
+			return err
+		}
+		log.Debugf("Event successfully sent to channel %s", channel)
 	}
-	log.Debugf("Event successfully sent to channel %s", d.ChannelID)
 	return nil
 }
 
 // SendMessage sends message to Discord Channel
 func (d *Discord) SendMessage(msg string) error {
 	log.Debug(fmt.Sprintf(">> Sending to discord: %+v", msg))
-	api, err := discordgo.New("Bot " + d.Token)
-	if err != nil {
-		log.Error("error creating Discord session,", err)
-		return err
-	}
+	for _, channel := range d.getAllChannels() {
+		api, err := discordgo.New("Bot " + d.Token)
+		if err != nil {
+			log.Error("error creating Discord session,", err)
+			return err
+		}
 
-	if _, err := api.ChannelMessageSend(d.ChannelID, msg); err != nil {
-		log.Error("Error in sending message:", err)
-		return err
+		if _, err := api.ChannelMessageSend(channel, msg); err != nil {
+			log.Error("Error in sending message:", err)
+			return err
+		}
+		log.Debugf("Event successfully sent to Discord %v", msg)
 	}
-	log.Debugf("Event successfully sent to Discord %v", msg)
 	return nil
 }
 
@@ -207,4 +216,16 @@ func discordShortNotification(event events.Event) discordgo.MessageEmbed {
 			Text: "BotKube",
 		},
 	}
+}
+
+// getAllChannels return all the channels configured under AccessBinding
+func (d *Discord) getAllChannels() []string {
+	var allChannels []string
+	for _, accessBinding := range d.AccessBindings {
+		allChannels = append(allChannels, accessBinding.ChannelName)
+	}
+	if len(allChannels) == 0 {
+		log.Errorf("No channel name found from profiles corresponds to AccessBindings for Slack")
+	}
+	return allChannels
 }

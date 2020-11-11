@@ -24,45 +24,65 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/execute"
+	"github.com/infracloudio/botkube/pkg/utils"
 	"github.com/infracloudio/botkube/test/e2e/env"
 	"github.com/nlopes/slack"
 	"github.com/stretchr/testify/assert"
 )
 
 type kubectlCommand struct {
-	command  string
-	expected string
-	channel  string
+	command   string
+	verb      string
+	resource  string
+	namespace string
+	expected  string
 }
 
 type context struct {
 	*env.TestEnv
 }
 
+const (
+	unsupportedCmdMsg = "```Command not supported or you don't have access to run this command. Please run /botkubehelp to see supported commands.```"
+)
+
 // Send kubectl command via Slack message and check if BotKube returns correct response
 func (c *context) testKubectlCommand(t *testing.T) {
 	// Test cases
 	tests := map[string]kubectlCommand{
 		"BotKube get pods from configured channel": {
-			command:  "get pods",
-			expected: fmt.Sprintf("```Cluster: %s\n%s```", c.Config.Settings.ClusterName, execute.KubectlResponse["-n default get pods"]),
-			channel:  c.Config.Communications.Slack.Channel,
+			command:   "get pods -n default",
+			verb:      "get",
+			resource:  "pods",
+			namespace: "default", //IF namespace is not specified (like get namespace) by defaulte default namespace from settings of resource_confg is appended by botkube
+			expected:  fmt.Sprintf("```Cluster: %s\n%s```", c.Config.Settings.ClusterName, execute.KubectlResponse["get pods"]),
 		},
-		"BotKube get pods out of configured channel": {
-			command:  "get pods",
-			expected: fmt.Sprintf("<@U023BECGF> get pods"),
-			channel:  "dummy",
+		"BotKube get pods from different namespace": {
+			command:   "get pods -n kube-system",
+			verb:      "get",
+			resource:  "pods",
+			namespace: "kube-system", //IF namespace is not specified (like get namespace) by defaulte default namespace from settings of resource_confg is appended by botkube
+			expected:  fmt.Sprintf("```Cluster: %s\n%s```", c.Config.Settings.ClusterName, execute.KubectlResponse["get pods -n kube-system"]),
+		},
+		"BotKube get namespaces": {
+			command:   "get namespaces",
+			verb:      "get",
+			resource:  "namespaces",
+			namespace: "default",
+			expected:  fmt.Sprintf("```Cluster: %s\n%s```", c.Config.Settings.ClusterName, execute.KubectlResponse[" get namespaces"]),
 		},
 		"kubectl command on forbidden verb and resource": {
 			command:  "config set clusters.test-clustor-1.server https://1.2.3.4",
 			expected: "```Command not supported. Please run /botkubehelp to see supported commands.```",
-			channel:  c.Config.Communications.Slack.Channel,
 		},
 		"kubectl command on forbidden resource": {
-			command:  "get endpoints",
-			expected: "```Command not supported. Please run /botkubehelp to see supported commands.```",
-			channel:  c.Config.Communications.Slack.Channel,
+			command:   "get endpoints",
+			verb:      "get",
+			resource:  "endpoints",
+			namespace: "default",
+			expected:  "```Command not supported. Please run /botkubehelp to see supported commands.```",
 		},
 	}
 
@@ -70,20 +90,36 @@ func (c *context) testKubectlCommand(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if c.TestEnv.Config.Communications.Slack.Enabled {
 				// Send message to a channel
-				c.SlackServer.SendMessageToBot(test.channel, test.command)
+				for _, accessBinding := range c.TestEnv.Config.Communications.Slack.AccessBindings {
+					c.SlackServer.SendMessageToBot(accessBinding.ChannelName, test.command)
+					// Get last seen slack message
+					lastSeenMsg := c.GetLastSeenSlackMessage(1)
+					// Convert text message into Slack message structure
+					m := slack.Message{}
+					err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+					assert.NoError(t, err, "message should decode properly")
+					assert.Equal(t, accessBinding.ChannelName, m.Channel)
 
-				// Get last seen slack message
-				lastSeenMsg := c.GetLastSeenSlackMessage()
+					if checkAllowedMessageByProfile(test.verb, test.resource, test.namespace, accessBinding.ProfileValue, m.Channel) {
+						assert.Equal(t, test.expected, m.Text)
+					} else {
+						assert.Equal(t, unsupportedCmdMsg, m.Text)
+					}
 
-				// Convert text message into Slack message structure
-				m := slack.Message{}
-				err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-				assert.NoError(t, err, "message should decode properly")
-				assert.Equal(t, test.channel, m.Channel)
-				assert.Equal(t, test.expected, m.Text)
+				}
+
 			}
 		})
 	}
+}
+
+// checkAllowedMessageByProfile check if chennal should execute provided command based on access permission defined with matching profile mapped to the channel
+func checkAllowedMessageByProfile(verb string, resource string, namespace string, profile config.Profile, channel string) bool {
+
+	if utils.Contains(profile.Namespaces, namespace) && utils.Contains(profile.Kubectl.Commands.Verbs, verb) && utils.Contains(profile.Kubectl.Commands.Resources, resource) {
+		return true
+	}
+	return false
 }
 
 // Run tests

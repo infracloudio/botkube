@@ -40,17 +40,19 @@ var attachmentColor = map[config.Level]string{
 
 // Slack contains Token for authentication with slack and Channel name to send notification to
 type Slack struct {
-	Channel   string
-	NotifType config.NotifType
-	Client    *slack.Client
+	Channel        string
+	NotifType      config.NotifType
+	AccessBindings []config.AccessBinding
+	Client         *slack.Client
 }
 
 // NewSlack returns new Slack object
 func NewSlack(c config.Slack) Notifier {
 	return &Slack{
-		Channel:   c.Channel,
-		NotifType: c.NotifType,
-		Client:    slack.New(c.Token),
+		Channel:        c.Channel,
+		NotifType:      c.NotifType,
+		AccessBindings: c.AccessBindings,
+		Client:         slack.New(c.Token),
 	}
 }
 
@@ -58,29 +60,19 @@ func NewSlack(c config.Slack) Notifier {
 func (s *Slack) SendEvent(event events.Event) error {
 	log.Debug(fmt.Sprintf(">> Sending to slack: %+v", event))
 	attachment := formatSlackMessage(event, s.NotifType)
-
-	// non empty value in event.channel demands redirection of events to a different channel
-	if event.Channel != "" {
-		channelID, timestamp, err := s.Client.PostMessage(event.Channel, slack.MsgOptionAttachments(attachment), slack.MsgOptionAsUser(true))
+	if len(event.SlackChannels) == 0 {
+		// send to all configured channel
+		event.SlackChannels = s.getAllChannels()
+	}
+	for _, channel := range event.SlackChannels {
+		channelID, timestamp, err := s.Client.PostMessage(channel, slack.MsgOptionAttachments(attachment), slack.MsgOptionAsUser(true))
 		if err != nil {
 			log.Errorf("Error in sending slack message %s", err.Error())
 			// send error message to default channel
 			if err.Error() == "channel_not_found" {
-				msg := fmt.Sprintf("Unable to send message to Channel `%s`: `%s`\n```add Botkube app to the Channel %s\nMissed events follows below:```", event.Channel, err.Error(), event.Channel)
+				msg := fmt.Sprintf("Unable to send message to Channel `%s`: `%s`\n```add Botkube app to the Channel %s\nMissed events follows below:```", channel, err.Error(), channel)
 				go s.SendMessage(msg)
-				// sending missed event to default channel
-				// reset event.Channel and send event
-				event.Channel = ""
-				go s.SendEvent(event)
 			}
-			return err
-		}
-		log.Debugf("Event successfully sent to channel %s at %s", channelID, timestamp)
-	} else {
-		// empty value in event.channel sends notifications to default channel.
-		channelID, timestamp, err := s.Client.PostMessage(s.Channel, slack.MsgOptionAttachments(attachment), slack.MsgOptionAsUser(true))
-		if err != nil {
-			log.Errorf("Error in sending slack message %s", err.Error())
 			return err
 		}
 		log.Debugf("Event successfully sent to channel %s at %s", channelID, timestamp)
@@ -91,14 +83,37 @@ func (s *Slack) SendEvent(event events.Event) error {
 // SendMessage sends message to slack channel
 func (s *Slack) SendMessage(msg string) error {
 	log.Debug(fmt.Sprintf(">> Sending to slack: %+v", msg))
-	channelID, timestamp, err := s.Client.PostMessage(s.Channel, slack.MsgOptionText(msg, false), slack.MsgOptionAsUser(true))
-	if err != nil {
-		log.Errorf("Error in sending slack message %s", err.Error())
-		return err
+	for _, channel := range s.getAllChannels() {
+		channelID, timestamp, err := s.Client.PostMessage(channel, slack.MsgOptionText(msg, false), slack.MsgOptionAsUser(true))
+		if err != nil {
+			log.Errorf("Error in sending Event to Slack channel %v, %s", channel, err.Error())
+			return err
+		}
+		log.Debugf("Event successfully sent to slack channel %s at %s", channelID, timestamp)
 	}
 
-	log.Debugf("Message successfully sent to channel %s at %s", channelID, timestamp)
 	return nil
+}
+
+func postSlackMessage(api *slack.Client, channel string, msg string) {
+	channelID, timestamp, err := api.PostMessage(channel, slack.MsgOptionText(msg, false), slack.MsgOptionAsUser(true))
+	if err != nil {
+		log.Errorf("Error in sending slack message to channel %s, Error: %s", channel, err.Error())
+		return
+	}
+	log.Debugf("Message successfully sent to slack channel %s at %s", channelID, timestamp)
+}
+
+// getAllChannels return all the channels configured under AccessBinding
+func (s *Slack) getAllChannels() []string {
+	var allChannels []string
+	for _, accessBinding := range s.AccessBindings {
+		allChannels = append(allChannels, accessBinding.ChannelName)
+	}
+	if len(allChannels) == 0 {
+		log.Errorf("No channel name found from profiles corresponds to AccessBindings for Slack")
+	}
+	return allChannels
 }
 
 func formatSlackMessage(event events.Event, notifyType config.NotifType) (attachment slack.Attachment) {

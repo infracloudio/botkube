@@ -28,7 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/aws/signer/v4"
+	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/infracloudio/botkube/pkg/events"
 	"github.com/infracloudio/botkube/pkg/log"
@@ -51,6 +51,28 @@ type ElasticSearch struct {
 	Shards    int
 	Replicas  int
 	Type      string
+}
+
+// ElasticSearchEvent contains event information specific to ElasticSearch
+type ElasticSearchEvent struct {
+	Code      string
+	Title     string
+	Kind      string
+	Name      string
+	Namespace string
+	Messages  []string
+	Type      config.EventType
+	Reason    string
+	Error     string
+	Level     config.Level
+	Cluster   string
+	TimeStamp time.Time
+	Count     int32
+	Action    string
+	Skip      bool `json:",omitempty"`
+
+	Recommendations []string
+	Warnings        []string
 }
 
 // NewElasticSearch returns new ElasticSearch object
@@ -162,9 +184,27 @@ func (e *ElasticSearch) flushIndex(ctx context.Context, event interface{}) error
 func (e *ElasticSearch) SendEvent(event events.Event) (err error) {
 	log.Debug(fmt.Sprintf(">> Sending to ElasticSearch: %+v", event))
 	ctx := context.Background()
-
+	elasticSearchEvent := &ElasticSearchEvent{
+		Code:            event.Code,
+		Title:           event.Title,
+		Kind:            event.Kind,
+		Name:            event.Name,
+		Namespace:       event.Namespace,
+		Messages:        event.Messages,
+		Type:            event.Type,
+		Reason:          event.Reason,
+		Error:           event.Error,
+		Level:           event.Level,
+		Cluster:         event.Cluster,
+		TimeStamp:       event.TimeStamp,
+		Count:           event.Count,
+		Action:          event.Action,
+		Skip:            event.Skip,
+		Recommendations: event.Recommendations,
+		Warnings:        event.Warnings,
+	}
 	// Create index if not exists
-	if err := e.flushIndex(ctx, event); err != nil {
+	if err := e.flushIndex(ctx, elasticSearchEvent); err != nil {
 		return err
 	}
 	return nil

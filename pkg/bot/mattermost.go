@@ -20,6 +20,8 @@
 package bot
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -51,7 +53,6 @@ const (
 type MMBot struct {
 	Token            string
 	TeamName         string
-	ChannelName      string
 	ClusterName      string
 	AllowKubectl     bool
 	RestrictAccess   bool
@@ -60,6 +61,7 @@ type MMBot struct {
 	WSClient         *model.WebSocketClient
 	APIClient        *model.Client4
 	DefaultNamespace string
+	AccessBindings   []config.AccessBinding
 }
 
 // mattermostMessage contains message details to execute command and send back the result
@@ -77,7 +79,7 @@ func NewMattermostBot(c *config.Config) Bot {
 		ServerURL:        c.Communications.Mattermost.URL,
 		Token:            c.Communications.Mattermost.Token,
 		TeamName:         c.Communications.Mattermost.Team,
-		ChannelName:      c.Communications.Mattermost.Channel,
+		AccessBindings:   c.Communications.Mattermost.AccessBindings,
 		ClusterName:      c.Settings.ClusterName,
 		AllowKubectl:     c.Settings.Kubectl.Enabled,
 		RestrictAccess:   c.Settings.Kubectl.RestrictAccess,
@@ -106,7 +108,7 @@ func (b *MMBot) Start() {
 	// Check connection to Mattermost server
 	err = b.checkServerConnection()
 	if err != nil {
-		log.Fatalf("There was a problem pinging the Mattermost server URL %s. %s", b.ServerURL, err.Error())
+		log.Errorf("There was a problem pinging the Mattermost server URL %s. %s", b.ServerURL, err.Error())
 		return
 	}
 
@@ -141,16 +143,27 @@ func (mm *mattermostMessage) handleMessage(b MMBot) {
 	}
 
 	// Check if message posted in authenticated channel
-	if mm.Event.Broadcast.ChannelId == b.getChannel().Id {
-		mm.IsAuthChannel = true
+	accessBinding := config.AccessBinding{}
+	for _, accessBind := range b.AccessBindings {
+
+		channel, err := b.getChannelInfo(accessBind.ChannelName)
+		if err != nil {
+			log.Errorf(fmt.Sprintf("%v", err))
+			return
+		}
+
+		if mm.Event.Broadcast.ChannelId == channel.Id {
+			mm.IsAuthChannel = true
+			accessBinding = accessBind
+			break
+		}
 	}
 	log.Debugf("Received mattermost event: %+v", mm.Event.Data)
 
 	// Trim the @BotKube prefix if exists
 	mm.Request = strings.TrimPrefix(post.Message, "@"+BotName+" ")
 
-	e := execute.NewDefaultExecutor(mm.Request, b.AllowKubectl, b.RestrictAccess, b.DefaultNamespace,
-		b.ClusterName, config.MattermostBot, b.ChannelName, mm.IsAuthChannel)
+	e := execute.NewDefaultExecutor(mm.Request, b.AllowKubectl, b.RestrictAccess, b.DefaultNamespace, b.ClusterName, accessBinding.ProfileValue, config.MattermostBot, accessBinding.ChannelName, mm.IsAuthChannel)
 	mm.Response = e.Execute()
 	mm.sendMessage()
 }
@@ -197,34 +210,48 @@ func (b MMBot) checkServerConnection() error {
 }
 
 // Check if team exists in Mattermost
-func (b MMBot) getTeam() *model.Team {
+func (b MMBot) getTeam() (*model.Team, error) {
 	botTeam, resp := b.APIClient.GetTeamByName(b.TeamName, "")
 	if resp.Error != nil {
-		log.Fatalf("There was a problem finding Mattermost team %s. %s", b.TeamName, resp.Error)
+		err := fmt.Sprintf("There was a problem finding Mattermost team %s. %s", b.TeamName, resp.Error)
+		return botTeam, errors.New(err)
 	}
-	return botTeam
+	return botTeam, nil
 }
 
-// Check if BotKube user exists in Mattermost
-func (b MMBot) getUser() *model.User {
-	users, resp := b.APIClient.AutocompleteUsersInTeam(b.getTeam().Id, BotName, 1, "")
+// Check if botkube user exists in Mattermost
+func (b MMBot) getUser() (*model.User, error) {
+	botTeam, err := b.getTeam()
+	if err != nil {
+		return new(model.User), err
+	}
+	users, resp := b.APIClient.AutocompleteUsersInTeam(botTeam.Id, BotName, 1, "")
 	if resp.Error != nil {
-		log.Fatalf("There was a problem finding Mattermost user %s. %s", BotName, resp.Error)
+		err := fmt.Sprintf("There was a problem finding Mattermost user %s. %s", BotName, resp.Error)
+		return new(model.User), errors.New(err)
 	}
-	return users.Users[0]
+	return users.Users[0], nil
 }
 
-// Create channel if not present and add BotKube user in channel
-func (b MMBot) getChannel() *model.Channel {
+// Create channel if not present and add botkube user in channel
+func (b MMBot) getChannelInfo(channelName string) (*model.Channel, error) {
+	botTeam, err := b.getTeam()
+	if err != nil {
+		return new(model.Channel), err
+	}
 	// Checking if channel exists
-	botChannel, resp := b.APIClient.GetChannelByName(b.ChannelName, b.getTeam().Id, "")
+	botChannel, resp := b.APIClient.GetChannelByName(channelName, botTeam.Id, "")
 	if resp.Error != nil {
-		log.Fatalf("There was a problem finding Mattermost channel %s. %s", b.ChannelName, resp.Error)
+		err := fmt.Sprintf("There was a problem finding Mattermost channel %s. %s", channelName, resp.Error)
+		return botChannel, errors.New(err)
 	}
-
-	// Adding BotKube user to channel
-	b.APIClient.AddChannelMember(botChannel.Id, b.getUser().Id)
-	return botChannel
+	botUser, err := b.getUser()
+	if err != nil {
+		return new(model.Channel), err
+	}
+	// Adding Botkube user to channel
+	b.APIClient.AddChannelMember(botChannel.Id, botUser.Id)
+	return botChannel, nil
 }
 
 func (b MMBot) listen() {
@@ -243,8 +270,13 @@ func (b MMBot) listen() {
 		if event.Event == model.WEBSOCKET_EVENT_POSTED {
 			post := model.PostFromJson(strings.NewReader(event.Data["post"].(string)))
 
+			botUser, err := b.getUser()
+			if err != nil {
+				log.Error(err)
+				return
+			}
 			// Skip if message posted by BotKube or doesn't start with mention
-			if post.UserId == b.getUser().Id {
+			if post.UserId == botUser.Id {
 				continue
 			}
 			mm := mattermostMessage{

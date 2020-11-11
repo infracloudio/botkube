@@ -191,7 +191,7 @@ func sendEvent(obj, oldObj interface{}, c *config.Config, notifiers []notify.Not
 
 	// Check for significant Update Events in objects
 	if eventType == config.UpdateEvent {
-		var updateMsg string
+		updateMsg := ""
 		// Check if all namespaces allowed
 		updateSetting, exist := utils.AllowedUpdateEventsMap[utils.KindNS{Resource: resource, Namespace: "all"}]
 		if !exist {
@@ -220,6 +220,35 @@ func sendEvent(obj, oldObj interface{}, c *config.Config, notifiers []notify.Not
 			// skipping least significant update
 			log.Debug("skipping least significant Update event")
 			event.Skip = true
+		}
+	}
+
+	// determine channel name where to send the corresponding event based on listed namsepace in selected profiles
+	if c.Communications.Slack.Enabled {
+		for _, accessBinding := range c.Communications.Slack.AccessBindings {
+			for _, namespace := range accessBinding.ProfileValue.Namespaces {
+				if event.Namespace == namespace {
+					event.SlackChannels = append(event.SlackChannels, accessBinding.ChannelName)
+				}
+			}
+		}
+	}
+	if c.Communications.Mattermost.Enabled {
+		for _, accessBinding := range c.Communications.Mattermost.AccessBindings {
+			for _, namespace := range accessBinding.ProfileValue.Namespaces {
+				if event.Namespace == namespace {
+					event.MattermostChannels = append(event.MattermostChannels, accessBinding.ChannelName)
+				}
+			}
+		}
+	}
+	if c.Communications.Discord.Enabled {
+		for _, accessBinding := range c.Communications.Discord.AccessBindings {
+			for _, namespace := range accessBinding.ProfileValue.Namespaces {
+				if event.Namespace == namespace {
+					event.DiscordChannels = append(event.DiscordChannels, accessBinding.ChannelName)
+				}
+			}
 		}
 	}
 

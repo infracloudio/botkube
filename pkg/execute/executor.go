@@ -44,11 +44,16 @@ var (
 	validPingCommand = map[string]bool{
 		"ping": true,
 	}
+
 	validVersionCommand = map[string]bool{
 		"version": true,
 	}
+
 	validFilterCommand = map[string]bool{
 		"filters": true,
+	}
+	validProfileCommand = map[string]bool{
+		"profile": true,
 	}
 	validInfoCommand = map[string]bool{
 		"commands": true,
@@ -64,23 +69,23 @@ var (
 		"drain":        true,
 		"uncordon":     true,
 	}
-
 	kubectlBinary = "/usr/local/bin/kubectl"
 )
 
 const (
-	notifierStopMsg    = "Sure! I won't send you notifications from cluster '%s' anymore."
-	unsupportedCmdMsg  = "Command not supported. Please run /botkubehelp to see supported commands."
+	notifierStopMsg   = "Sure! I won't send you notifications from cluster '%s' anymore."
+	unsupportedCmdMsg = "Command not supported or you don't have access to run this command. Please run /botkubehelp to see supported commands."
+
 	kubectlDisabledMsg = "Sorry, the admin hasn't given me the permission to execute kubectl command on cluster '%s'."
 	filterNameMissing  = "You forgot to pass filter name. Please pass one of the following valid filters:\n\n%s"
 	filterEnabled      = "I have enabled '%s' filter on '%s' cluster."
 	filterDisabled     = "Done. I won't run '%s' filter on '%s' cluster."
-
+	getProfileMessage  = "Selected Profile for channel %s is '%s' on '%s' cluster ."
+	oldConfigVersion   = "Unable to read access_config.yaml You might be using the older structure of configuration which by default support only one profile, called 'BOTKUBE ADMIN'"
 	// NotifierStartMsg notifier enabled response message
 	NotifierStartMsg = "Brace yourselves, notifications are coming from cluster '%s'."
 	// IncompleteCmdMsg incomplete command response message
-	IncompleteCmdMsg = "You missed to pass options for the command. Please run /botkubehelp to see command options."
-
+	IncompleteCmdMsg = "You missed to pass options for the command or you don't have access to run this command. Please run /botkubehelp to see command options."
 	// Custom messages for teams platform
 	teamsUnsupportedCmdMsg = "Command not supported. Please visit botkube.io/usage to see supported commands."
 	teamsIncompleteCmdMsg  = "You missed to pass options for the command. Please run /botkubehelp to see command options."
@@ -98,9 +103,10 @@ type DefaultExecutor struct {
 	AllowKubectl     bool
 	RestrictAccess   bool
 	ClusterName      string
-	ChannelName      string
+	Profile          config.Profile
 	IsAuthChannel    bool
 	DefaultNamespace string
+	ChannelName      string
 }
 
 // CommandRunner is an interface to run bash commands
@@ -123,16 +129,33 @@ func (action NotifierAction) String() string {
 	return string(action)
 }
 
+// ProfileAction creates custom type for notifier actions
+type ProfileAction string
+
+// Defines constants for notifier actions
+const (
+	ProfileGet        ProfileAction = "get"
+	ProfileList       ProfileAction = "list"
+	ProfileShowConfig ProfileAction = "showconfig"
+)
+
+func (action ProfileAction) String() string {
+	return string(action)
+}
+
 // CommandFlags creates custom type for flags in botkube
 type CommandFlags string
 
 // Defines botkube flags
 const (
-	ClusterFlag    CommandFlags = "--cluster-name"
-	FollowFlag     CommandFlags = "--follow"
-	AbbrFollowFlag CommandFlags = "-f"
-	WatchFlag      CommandFlags = "--watch"
-	AbbrWatchFlag  CommandFlags = "-w"
+	ClusterFlag       CommandFlags = "--cluster-name"
+	AllNameSpaces     CommandFlags = "--all-namespaces"
+	FollowFlag        CommandFlags = "--follow"
+	AbbrFollowFlag    CommandFlags = "-f"
+	WatchFlag         CommandFlags = "--watch"
+	AbbrWatchFlag     CommandFlags = "-w"
+	NameSpaceFlag     CommandFlags = "--namespace"
+	AbbrNameSpaceFlag CommandFlags = "-n"
 )
 
 func (flag CommandFlags) String() string {
@@ -164,16 +187,17 @@ func (action FiltersAction) String() string {
 // NewDefaultExecutor returns new Executor object
 // msg should not contain the BotId
 func NewDefaultExecutor(msg string, allowkubectl, restrictAccess bool, defaultNamespace,
-	clusterName string, platform config.BotPlatform, channelName string, isAuthChannel bool) Executor {
+	clusterName string, Profile config.Profile, platform config.BotPlatform, channelName string, isAuthChannel bool) Executor {
 	return &DefaultExecutor{
 		Platform:         platform,
 		Message:          msg,
 		AllowKubectl:     allowkubectl,
 		RestrictAccess:   restrictAccess,
 		ClusterName:      clusterName,
-		ChannelName:      channelName,
+		Profile:          Profile,
 		IsAuthChannel:    isAuthChannel,
 		DefaultNamespace: defaultNamespace,
+		ChannelName:      channelName,
 	}
 }
 
@@ -186,24 +210,40 @@ func (e *DefaultExecutor) Execute() string {
 		}
 		return "" // this prevents all bots on all clusters to answer something
 	}
-	if len(args) >= 1 && utils.AllowedKubectlVerbMap[args[0]] {
-		if validDebugCommands[args[0]] || // Don't check for resource if is a valid debug command
-			utils.AllowedKubectlResourceMap[args[1]] || // Check if allowed resource
-			utils.AllowedKubectlResourceMap[utils.KindResourceMap[strings.ToLower(args[1])]] || // Check if matches with kind name
-			utils.AllowedKubectlResourceMap[utils.ShortnameResourceMap[strings.ToLower(args[1])]] { // Check if matches with short name
-			isClusterNamePresent := strings.Contains(e.Message, "--cluster-name")
-			if !e.AllowKubectl {
-				if isClusterNamePresent && e.ClusterName == utils.GetClusterNameFromKubectlCmd(e.Message) {
-					return fmt.Sprintf(kubectlDisabledMsg, e.ClusterName)
+	// authorizeCommandByProfile check if the command is and authorized kubectl command
+	if e.Profile.Name == "" {
+		if len(args) >= 1 && utils.AllowedKubectlVerbMap[args[0]] {
+			if validDebugCommands[args[0]] || // Don't check for resource if is a valid debug command
+				utils.AllowedKubectlResourceMap[args[1]] || // Check if allowed resource
+				utils.AllowedKubectlResourceMap[utils.KindResourceMap[strings.ToLower(args[1])]] || // Check if matches with kind name
+				utils.AllowedKubectlResourceMap[utils.ShortnameResourceMap[strings.ToLower(args[1])]] { // Check if matches with short name
+				isClusterNamePresent := strings.Contains(e.Message, "--cluster-name")
+				if !e.AllowKubectl {
+					if isClusterNamePresent && e.ClusterName == utils.GetClusterNameFromKubectlCmd(e.Message) {
+						return fmt.Sprintf(kubectlDisabledMsg, e.ClusterName)
+					}
+					return ""
 				}
-				return ""
-			}
 
-			if e.RestrictAccess && !e.IsAuthChannel && isClusterNamePresent {
-				return ""
+				if e.RestrictAccess && !e.IsAuthChannel && isClusterNamePresent {
+					return ""
+				}
+				return runKubectlCommand(args, e.Profile, e.ClusterName, e.DefaultNamespace, e.IsAuthChannel)
 			}
-			return runKubectlCommand(args, e.ClusterName, e.DefaultNamespace, e.IsAuthChannel)
 		}
+	} else if authorizeCommandByProfile(e.Profile, args) {
+		// Check if command should execute on not
+		isClusterNamePresent := strings.Contains(e.Message, "--cluster-name")
+		if !e.AllowKubectl || !e.Profile.Kubectl.Enabled {
+			if isClusterNamePresent && e.ClusterName == utils.GetClusterNameFromKubectlCmd(e.Message) {
+				return fmt.Sprintf(kubectlDisabledMsg, e.ClusterName)
+			}
+			return ""
+		}
+		if e.RestrictAccess && !e.IsAuthChannel && isClusterNamePresent {
+			return ""
+		}
+		return runKubectlCommand(args, e.Profile, e.ClusterName, e.DefaultNamespace, e.IsAuthChannel)
 	}
 	if ValidNotifierCommand[args[0]] {
 		return e.runNotifierCommand(args, e.ClusterName, e.IsAuthChannel)
@@ -221,6 +261,9 @@ func (e *DefaultExecutor) Execute() string {
 	// Check if filter command
 	if validFilterCommand[args[0]] {
 		return e.runFilterCommand(args, e.ClusterName, e.IsAuthChannel)
+	}
+	if validProfileCommand[args[0]] {
+		return e.runProfileCommand(args, e.ClusterName, e.IsAuthChannel, e.Profile, e.ChannelName)
 	}
 
 	//Check if info command
@@ -251,13 +294,10 @@ func trimQuotes(clusterValue string) string {
 	})
 }
 
-func runKubectlCommand(args []string, clusterName, defaultNamespace string, isAuthChannel bool) string {
-
-	// run commands in namespace specified under Config.Settings.DefaultNamespace field
+func runKubectlCommand(args []string, Profile config.Profile, clusterName, defaultNamespace string, isAuthChannel bool) string {
+	// Run commands in namespace specified under Config.Settings.DefaultNamespace field
 	if len(defaultNamespace) != 0 {
 		args = append([]string{"-n", defaultNamespace}, utils.DeleteDoubleWhiteSpace(args)...)
-	} else {
-		args = append([]string{"-n", "default"}, utils.DeleteDoubleWhiteSpace(args)...)
 	}
 
 	// Remove unnecessary flags
@@ -274,6 +314,23 @@ func runKubectlCommand(args []string, clusterName, defaultNamespace string, isAu
 		if arg == AbbrWatchFlag.String() || strings.HasPrefix(arg, WatchFlag.String()) {
 			continue
 		}
+
+		// Disable --all-namespaces flag
+		if arg == AllNameSpaces.String() {
+			return ""
+		}
+
+		if arg == AbbrNameSpaceFlag.String() || strings.HasPrefix(arg, NameSpaceFlag.String()) {
+			// Check if next argument or value of namespace is provided or not
+			if index == len(args)-1 {
+				return ""
+			}
+			// Check if the channel is authorized to run commands on the requested namsepaces and profile value is not nil
+			if len(Profile.Namespaces) == 0 && !utils.Contains(Profile.Namespaces, trimQuotes(args[index+1])) && Profile.Name != "" {
+				return ""
+			}
+		}
+
 		// Check --cluster-name flag
 		if strings.HasPrefix(arg, ClusterFlag.String()) {
 			// Check if flag value in current or next argument and compare with config.settings.clustername
@@ -299,7 +356,7 @@ func runKubectlCommand(args []string, clusterName, defaultNamespace string, isAu
 	runner := NewCommandRunner(kubectlBinary, finalArgs)
 	out, err := runner.Run()
 	if err != nil {
-		log.Error("Error in executing kubectl command: ", err)
+		log.Error("log.Error in executing kubectl command: ", err)
 		return fmt.Sprintf("Cluster: %s\n%s", clusterName, out+err.Error())
 	}
 	return fmt.Sprintf("Cluster: %s\n%s", clusterName, out)
@@ -347,7 +404,6 @@ func (e *DefaultExecutor) runFilterCommand(args []string, clusterName string, is
 	if len(args) < 2 {
 		return IncompleteCmdMsg
 	}
-
 	switch args[1] {
 	case FilterList.String():
 		log.Debug("List filters")
@@ -394,18 +450,61 @@ func makeCommandInfoList() string {
 	allowedResources := utils.GetStringInYamlFormat("allowed resources:", utils.AllowedKubectlResourceMap)
 	return allowedVerbs + allowedResources
 }
+func (e *DefaultExecutor) runProfileCommand(args []string, clusterName string, isAuthChannel bool, Profile config.Profile, channelName string) string {
+	if isAuthChannel == false {
+		return ""
+	}
+	if len(args) < 2 {
+		return IncompleteCmdMsg
+	}
+	switch args[1] {
+	case ProfileGet.String():
+		log.Info("Get Profile")
+		return fmt.Sprintf(getProfileMessage, channelName, Profile.Name, clusterName)
+
+	case ProfileList.String():
+		log.Info("List all Profiles")
+		list, err := config.GetAllProfiles()
+		if err != nil {
+			log.Error("Unable load all profile Information")
+			return oldConfigVersion
+		}
+		allProfileList, err := yaml.Marshal(list)
+		allProfileListString := string(allProfileList)
+		err = utils.FormatProfile(&allProfileListString)
+		if err != nil {
+			log.Error("Failed in formatting profileConfigString")
+		}
+		if err != nil {
+			log.Fatal("Unable to marshal All profile list")
+		}
+		return fmt.Sprintf("Showing all profiles  \n\n%s", allProfileListString)
+
+	case ProfileShowConfig.String():
+		log.Info("Get selected Profile config")
+		profileConfig, err := yaml.Marshal(Profile.Kubectl)
+		if err != nil {
+			log.Fatal("Unable to marshal Profile config")
+		}
+		profileConfigString := string(profileConfig)
+		err = utils.FormatProfile(&profileConfigString)
+		if err != nil {
+			log.Error("Failed in formatting profileConfigString")
+		}
+		return fmt.Sprintf("Showing config for selected Profile %s \n\n%s", Profile.Name, profileConfigString)
+	}
+	return printDefaultMsg(e.Platform)
+}
 
 // Use tabwriter to display string in tabular form
 // https://golang.org/pkg/text/tabwriter
 func makeFiltersList() string {
 	buf := new(bytes.Buffer)
 	w := tabwriter.NewWriter(buf, 5, 0, 1, ' ', 0)
-
 	fmt.Fprintln(w, "FILTER\tENABLED\tDESCRIPTION")
 	for k, v := range filterengine.DefaultFilterEngine.ShowFilters() {
 		fmt.Fprintf(w, "%s\t%v\t%s\n", reflect.TypeOf(k).Name(), v, k.Describe())
 	}
-
 	w.Flush()
 	return buf.String()
 }
@@ -419,7 +518,6 @@ func findBotKubeVersion() (versions string) {
 		log.Warn(fmt.Sprintf("Failed to get Kubernetes version: %s", err.Error()))
 		k8sVersion = "Server Version: Unknown\n"
 	}
-
 	botkubeVersion := os.Getenv("BOTKUBE_VERSION")
 	if len(botkubeVersion) == 0 {
 		botkubeVersion = "Unknown"
@@ -464,6 +562,28 @@ func showControllerConfig() (configYaml string, err error) {
 		return configYaml, err
 	}
 	configYaml = string(b)
-
 	return configYaml, nil
+}
+
+// authorizeCommandByProfile function check if channel has permission to run the specific command or not
+// based on access rules defined in corresponding profile resources and verbs
+// namespace from profile will be chacked later in runKubectlCommand
+func authorizeCommandByProfile(Profile config.Profile, args []string) bool {
+	authorizedCommand := false
+	if len(args) >= 2 {
+		// check for allowed kubectl verb
+		allowedOperations := Profile.Kubectl.Commands.Verbs
+		if authorizedCommand = utils.Contains(allowedOperations, args[0]); !authorizedCommand {
+			return false
+		}
+
+		if validDebugCommands[args[0]] || // Don't check for resource if is a valid debug command
+			Profile.AllowedKubectlResourceMap[args[1]] || // Check if allowed resource
+			Profile.AllowedKubectlResourceMap[utils.KindResourceMap[strings.ToLower(args[1])]] || // Check if matches with kind name
+			Profile.AllowedKubectlResourceMap[utils.ShortnameResourceMap[strings.ToLower(args[1])]] { // Check if matches with short name
+			return true
+		}
+		return false
+	}
+	return authorizedCommand
 }

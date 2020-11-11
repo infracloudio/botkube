@@ -101,14 +101,12 @@ func (e *TestEnv) SetupFakeSlack() {
 	e.SlackServer = s
 }
 
-// GetLastSeenSlackMessage return last message received by fake slack server
-func (e TestEnv) GetLastSeenSlackMessage() *string {
-
+// GetLastSeenSlackMessage return last message received by fake slack server, i=1 for last, i=2 for 2nd last and so on
+func (e TestEnv) GetLastSeenSlackMessage(i int) *string {
 	time.Sleep(5 * time.Second)
-
 	allSeenMessages := e.SlackServer.GetSeenOutboundMessages()
-	if len(allSeenMessages) != 0 {
-		return &allSeenMessages[len(allSeenMessages)-1]
+	if len(allSeenMessages) != 0 && len(allSeenMessages) >= i {
+		return &allSeenMessages[len(allSeenMessages)-i]
 	}
 	return nil
 }

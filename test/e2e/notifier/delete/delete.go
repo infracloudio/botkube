@@ -107,19 +107,24 @@ func (c *context) testDeleteEvent(t *testing.T) {
 			testutils.DeleteResource(t, test)
 
 			if c.TestEnv.Config.Communications.Slack.Enabled {
+				for i := range c.Config.Communications.Slack.AccessBindings {
+					// Get last seen slack message
+					lastSeenMsg := c.GetLastSeenSlackMessage(i + 1)
 
-				// Get last seen slack message
-				lastSeenMsg := c.GetLastSeenSlackMessage()
-
-				// Convert text message into Slack message structure
-				m := slack.Message{}
-				err := json.Unmarshal([]byte(*lastSeenMsg), &m)
-				if len(m.Attachments) != 0 {
-					m.Attachments[0].Ts = ""
+					// Convert text message into Slack message structure
+					m := slack.Message{}
+					err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+					if len(m.Attachments) != 0 {
+						m.Attachments[0].Ts = ""
+					}
+					assert.NoError(t, err, "message should decode properly")
+					// since same message is sent to all the channels, we are comparing
+					// that the each new message received on slack must be configured under AccessBindings,
+					// and also  all new messages must be same as expacted one\
+					validChannel := utils.Contains(utils.GetAllChannels(&c.TestEnv.Config.Communications.Slack.AccessBindings), m.Channel)
+					assert.Equal(t, validChannel, true)
+					assert.Equal(t, test.ExpectedSlackMessage.Attachments, m.Attachments)
 				}
-				assert.NoError(t, err, "message should decode properly")
-				assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
-				assert.Equal(t, test.ExpectedSlackMessage.Attachments, m.Attachments)
 			}
 
 			if c.TestEnv.Config.Communications.Webhook.Enabled {

@@ -62,3 +62,48 @@ func TestGetStringInYamlFormat(t *testing.T) {
 		t.Errorf("expected: %v, got: %v", expected, got)
 	}
 }
+
+func TestContainsMethod(t *testing.T) {
+	type input struct {
+		array []string
+		value string
+	}
+	type test struct {
+		input    input
+		expected bool
+	}
+
+	input1 := input{
+		array: []string{"get", "logs"},
+		value: "logs",
+	}
+	input2 := input{
+		array: []string{"get", "logs"},
+		value: "describe",
+	}
+	input3 := input{
+		array: []string{"get", "Logs"},
+		value: "logs",
+	}
+	tests := []test{
+		{
+			input:    input1,
+			expected: true,
+		},
+		{
+			input:    input2,
+			expected: false,
+		},
+		{
+			input:    input3,
+			expected: true,
+		},
+	}
+
+	for _, ts := range tests {
+		got := Contains(ts.input.array, ts.input.value)
+		if got != ts.expected {
+			t.Errorf("expected: %v, got: %v", ts.expected, got)
+		}
+	}
+}

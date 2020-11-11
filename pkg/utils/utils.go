@@ -291,6 +291,7 @@ func InitResourceMap(conf *config.Config) {
 	for _, r := range conf.Settings.Kubectl.Commands.Resources {
 		AllowedKubectlResourceMap[r] = true
 	}
+
 	for _, r := range conf.Settings.Kubectl.Commands.Verbs {
 		AllowedKubectlVerbMap[r] = true
 	}
@@ -323,7 +324,7 @@ func GetClusterNameFromKubectlCmd(cmd string) string {
 	r, _ := regexp.Compile(`--cluster-name[=|' ']([^\s]*)`)
 	//this gives 2 match with cluster name and without
 	matchedArray := r.FindStringSubmatch(cmd)
-	var s string
+	s := ""
 	if len(matchedArray) >= 2 {
 		s = matchedArray[1]
 	}
@@ -386,4 +387,35 @@ func CheckOperationAllowed(eventMap map[EventKind]bool, namespace string, resour
 		return true
 	}
 	return false
+}
+
+// Contains tells whether a contains x.
+func Contains(a []string, x string) bool {
+	for _, n := range a {
+		if strings.ToLower(x) == strings.ToLower(n) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAllChannels return all channels listed in Accessbinding
+func GetAllChannels(accessBindings *[]config.AccessBinding) []string {
+	allChannels := []string{}
+	for _, accessBind := range *accessBindings {
+		allChannels = append(allChannels, accessBind.ChannelName)
+	}
+	return allChannels
+}
+
+// FormatProfile will remove the unnecessary part of the message, while displaying profile information
+func FormatProfile(profile *string) error {
+	profileValue := *profile
+	// Remove the last two default key value from the each profile value (Kubectl struct)
+	eliminate1 := `defaultnamespace: ""`
+	eliminate2 := `restrictAccess: false`
+	profileValue = strings.ReplaceAll(profileValue, eliminate1, "")
+	profileValue = strings.ReplaceAll(profileValue, eliminate2, "")
+	*profile = profileValue
+	return nil
 }

@@ -59,7 +59,10 @@ func (f ObjectAnnotationChecker) Run(object interface{}, event *events.Event) {
 	}
 
 	if channel, ok := reconfigureChannel(obj); ok {
-		event.Channel = channel
+		var channelList []string
+		channelList = append(channelList, channel)
+		event.SlackChannels = channelList
+		event.MattermostChannels = channelList
 		log.Debugf("Redirecting Event Notifications to channel: %s", channel)
 	}
 
