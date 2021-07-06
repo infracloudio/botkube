@@ -109,6 +109,10 @@ func (c *context) testBotkubeCommand(t *testing.T) {
 			command:  "commands list --cluster-name test-cluster-2",
 			expected: "Sorry, the admin hasn't configured me to do that for the cluster 'test-cluster-2'.",
 		},
+		"BotKube notifier showconfig": {
+			command:  "notifier showconfig",
+			expected: "<@U023BECGF> notifier showconfig",
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -136,6 +140,9 @@ func (c *context) testBotkubeCommand(t *testing.T) {
 				case "commands list":
 					cl := compareFilters(strings.Split(test.expected, "\n"), strings.Split(strings.TrimSpace(strings.Trim(m.Text, "```")), "\n"))
 					assert.Equal(t, cl, true)
+				case "notifier showconfig":
+					ns := compareFilters(strings.Split(test.expected, "\n"), strings.Split(strings.Trim(m.Text, "```"), "\n"))
+					assert.Equal(t, ns, true)
 				default:
 					assert.Equal(t, test.expected, m.Text)
 				}
