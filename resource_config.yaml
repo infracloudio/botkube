@@ -12,6 +12,12 @@ resources:
       - create
       - delete
       - error
+    reasons:                  # List of event's reasons to include or ignore (e.g Failed, BackOff etc)
+                              # empty means "include all"    
+      include:
+        - all
+      ignore:                 # List of event's reasons to be ignored
+        - Scheduled
   - name: v1/services
     namespaces:
       include:  

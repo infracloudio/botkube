@@ -109,6 +109,7 @@ type Resource struct {
 	Name          string
 	Namespaces    Namespaces
 	Events        []EventType
+	Reasons       Reasons
 	UpdateSetting UpdateSetting `yaml:"updateSetting"`
 }
 
@@ -126,6 +127,16 @@ type UpdateSetting struct {
 // It can also contain a * that would expand to zero or more arbitrary characters
 // example : include [all], ignore [x,y,secret-ns-*]
 type Namespaces struct {
+	Include []string
+	Ignore  []string `yaml:",omitempty"`
+}
+
+// Reasons contains reasons to include and ignore
+// Include contains a list of reasons to be watched,
+//  - "all" to watch all the reasons
+// Ignore contains a list of reasons to be ignored when all reasons are included
+// It is an optional (omitempty) field which is tandem with Include [all]
+type Reasons struct {
 	Include []string
 	Ignore  []string `yaml:",omitempty"`
 }
