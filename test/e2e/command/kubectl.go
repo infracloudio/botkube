@@ -64,6 +64,11 @@ func (c *context) testKubectlCommand(t *testing.T) {
 			expected: "```\nCommand not supported. Please run /botkubehelp to see supported commands.\n```",
 			channel:  c.Config.Communications.Slack.Channel,
 		},
+		"kubectl command without a resource": {
+			command:  "get",
+			expected: "```Command not supported. Please run /botkubehelp to see supported commands.```",
+			channel:  c.Config.Communications.Slack.Channel,
+		},
 	}
 
 	for name, test := range tests {

@@ -192,9 +192,9 @@ func (e *DefaultExecutor) Execute() string {
 	}
 	if len(args) >= 1 && utils.AllowedKubectlVerbMap[args[0]] {
 		if validDebugCommands[args[0]] || // Don't check for resource if is a valid debug command
-			utils.AllowedKubectlResourceMap[args[1]] || // Check if allowed resource
-			utils.AllowedKubectlResourceMap[utils.KindResourceMap[strings.ToLower(args[1])]] || // Check if matches with kind name
-			utils.AllowedKubectlResourceMap[utils.ShortnameResourceMap[strings.ToLower(args[1])]] { // Check if matches with short name
+			(len(args) >= 2 && (utils.AllowedKubectlResourceMap[args[1]] || // Check if allowed resource
+				utils.AllowedKubectlResourceMap[utils.KindResourceMap[strings.ToLower(args[1])]] || // Check if matches with kind name
+				utils.AllowedKubectlResourceMap[utils.ShortnameResourceMap[strings.ToLower(args[1])]])) { // Check if matches with short name
 			isClusterNamePresent := strings.Contains(e.Message, "--cluster-name")
 			if !e.AllowKubectl {
 				if isClusterNamePresent && e.ClusterName == utils.GetClusterNameFromKubectlCmd(e.Message) {
