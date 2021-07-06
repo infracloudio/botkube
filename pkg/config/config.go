@@ -88,6 +88,10 @@ var CommunicationConfigFileName = "comm_config.yaml"
 // Notify flag to toggle event notification
 var Notify = true
 
+//KubeCtlLinkedChannels is a set that contains the channel ID (as a key)of all channels linked to
+//this cluster and containing the default namespace as a value
+var KubeCtlLinkedChannels map[string]string = make(map[string]string)
+
 // NotifType to change notification type
 type NotifType string
 

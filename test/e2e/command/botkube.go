@@ -47,6 +47,10 @@ func (c *context) testBotkubeCommand(t *testing.T) {
 	botkubeVersion := os.Getenv("BOTKUBE_VERSION")
 	// Test cases
 	tests := map[string]botkubeCommand{
+		"BotKube empty": {
+			command:  "",
+			expected: fmt.Sprintf("```%s```", execute.UnsupportedCmdMsg),
+		},
 		"BotKube ping": {
 			command:  "ping",
 			expected: fmt.Sprintf("```\npong from cluster '%s'\n\nK8s Server Version: %s\nBotKube version: %s\n```", c.Config.Settings.ClusterName, execute.K8sVersion, botkubeVersion),
@@ -234,4 +238,104 @@ func (c *context) testNotifierCommand(t *testing.T) {
 			assert.Equal(t, config.Notify, true)
 		}
 	})
+}
+
+// Test default cluster
+// - @BotKube cluster => should return <current cluster>
+// - @Botkube cluster foo => return "" (this should disable the default cluster)
+// - @Botkube cluster => return ""
+// - @Botkube cluster <current cluster> => return default <current cluster> is used
+func (c *context) testDefaultClusterCommand(t *testing.T) {
+	defer func() {
+		// set back the default cluster value
+		config.KubeCtlLinkedChannels = map[string]string{c.Config.Communications.Slack.Channel: c.Config.Settings.Kubectl.DefaultNamespace}
+	}()
+	t.Run("default cluster command", func(t *testing.T) {
+		if c.TestEnv.Config.Communications.Slack.Enabled {
+			// Send "cluster" to a channel, response should be the <current cluster>
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "cluster")
+			m := c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf(fmt.Sprintf("```%s```", execute.DefaultClusterForKubectl), c.Config.Settings.ClusterName), m.Text)
+			// Send "cluster foo" to a channel, response should be empty
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "cluster foo")
+			m = c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf("%s cluster foo", utils.SlackEmptyResponsePrefix), m.Text)
+			// Send "cluster" to a channel, response should be empty
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "cluster")
+			m = c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf("%s cluster", utils.SlackEmptyResponsePrefix), m.Text)
+			// Send "cluster <current cluster>" to a channel, response should be default cluster set
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, fmt.Sprintf("cluster %s", c.Config.Settings.ClusterName))
+			m = c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, "```"+fmt.Sprintf(execute.DefaultClusterForKubectlAccepted, c.Config.Settings.ClusterName)+"```", m.Text)
+		}
+	})
+}
+
+// Test default namespace
+// - @BotKube namespace => return current namespace
+// - @Botkube namespace foo => return using foo as default namespace
+// - @Botkube namespace => return foo namespace
+func (c *context) testDefaultNamespaceCommand(t *testing.T) {
+	defer func() {
+		// set back the default cluster value
+		config.KubeCtlLinkedChannels = map[string]string{c.Config.Communications.Slack.Channel: c.Config.Settings.Kubectl.DefaultNamespace}
+	}()
+	t.Run("default namespace", func(t *testing.T) {
+		if c.TestEnv.Config.Communications.Slack.Enabled {
+			// Send "namespace" to a channel, response should be default
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "namespace")
+			m := c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf(fmt.Sprintf("```%s```", execute.DefaultNamespaceForKubectl), c.Config.Settings.ClusterName, c.Config.Settings.Kubectl.DefaultNamespace), m.Text)
+			// Send "namespace foo" to a channel, response accepted
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "namespace foo")
+			m = c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf(fmt.Sprintf("```%s```", execute.DefaultNamespaceForKubectlAccepted), "foo", c.Config.Settings.ClusterName), m.Text)
+			// Send "namespace" to a channel, response should be foo
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "namespace")
+			m = c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf(fmt.Sprintf("```%s```", execute.DefaultNamespaceForKubectl), c.Config.Settings.ClusterName, "foo"), m.Text)
+		}
+	})
+}
+
+// Test default namespace and kubectl commands
+// - @BotKube namespace => return current namespace
+// - @Botkube namespace foo => return using foo as default namespace
+// - @Botkube kubectl get pods => translate into `kubectl -n foo get pods`
+func (c *context) testDefaultNamespaceWithKubectlCommands(t *testing.T) {
+	defer func() {
+		// set back the default cluster value
+		config.KubeCtlLinkedChannels = map[string]string{c.Config.Communications.Slack.Channel: c.Config.Settings.Kubectl.DefaultNamespace}
+	}()
+	t.Run("default namespace", func(t *testing.T) {
+		if c.TestEnv.Config.Communications.Slack.Enabled {
+			// set default namespace to foo
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "namespace foo")
+			c.GetLastSeenSlackMessage()
+			// Send "kubectl get pods" to a channel, response should be foo
+			c.SlackServer.SendMessageToBot(c.Config.Communications.Slack.Channel, "get pods")
+			m := c.GetLastMessageAndAssert(t)
+			assert.Equal(t, c.Config.Communications.Slack.Channel, m.Channel)
+			assert.Equal(t, fmt.Sprintf("```Cluster: %s\n%s```", c.Config.Settings.ClusterName, execute.KubectlResponse["-n foo get pods"]), m.Text)
+		}
+	})
+}
+
+func (c *context) GetLastMessageAndAssert(t *testing.T) slack.Message {
+	// Get last seen slack message
+	lastSeenMsg := c.GetLastSeenSlackMessage()
+
+	// Convert text message into Slack message structure
+	m := slack.Message{}
+	err := json.Unmarshal([]byte(*lastSeenMsg), &m)
+	assert.NoError(t, err, "message should decode properly")
+	return m
 }

@@ -20,6 +20,7 @@
 package bot
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/infracloudio/botkube/pkg/config"
@@ -85,7 +86,7 @@ func (b *SlackBot) Start() {
 		switch ev := msg.Data.(type) {
 		case *slack.ConnectedEvent:
 			log.Info("BotKube connected to Slack!")
-
+			setupDefaultChannelForKubeCtl(RTM.Client, b.ChannelName, b.ClusterName, b.DefaultNamespace)
 		case *slack.MessageEvent:
 			// Skip if message posted by BotKube
 			if ev.User == botID {
@@ -126,6 +127,22 @@ func (b *SlackBot) Start() {
 	}
 }
 
+//search for the default channel id to store it
+func setupDefaultChannelForKubeCtl(client slack.Client, channelName string, clusterName string, namespace string) {
+	//we send a message to tell this cluster is going to be used as default for kubectl
+	//this is also a trick to get the channel ID cause there is not easy way to do so
+	msgOpt := slack.MsgOptionText(fmt.Sprintf(execute.DefaultClusterForKubectl, clusterName), false)
+	channelID, _, err := client.PostMessage(channelName, msgOpt, slack.MsgOptionAsUser(true))
+	if err != nil {
+		log.Errorf("Error in sending slack message to channel %s : %s", channelName, err.Error())
+		return
+	}
+	if namespace == "" {
+		namespace = "default"
+	}
+	config.KubeCtlLinkedChannels[channelID] = namespace
+}
+
 func (sm *slackMessage) HandleMessage(b *SlackBot) {
 	// Check if message posted in authenticated channel
 	info, err := sm.SlackClient.GetConversationInfo(sm.Event.Channel, true)
@@ -151,7 +168,7 @@ func (sm *slackMessage) HandleMessage(b *SlackBot) {
 	sm.Request = strings.TrimPrefix(sm.Event.Text, "<@"+sm.BotID+">")
 
 	e := execute.NewDefaultExecutor(sm.Request, b.AllowKubectl, b.RestrictAccess, b.DefaultNamespace,
-		b.ClusterName, config.SlackBot, b.ChannelName, sm.IsAuthChannel)
+		b.ClusterName, config.SlackBot, sm.Event.Channel, sm.IsAuthChannel)
 	sm.Response = e.Execute()
 	sm.Send()
 }

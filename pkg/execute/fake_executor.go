@@ -34,6 +34,7 @@ var KubectlResponse = map[string]string{
 	"-n default get pods": "NAME                           READY   STATUS    RESTARTS   AGE\n" +
 		"nginx-xxxxxxx-yyyyyyy          1/1     Running   1          1d",
 	"-c " + kubectlBinary + " version --short=true | grep Server": fmt.Sprintf("Server Version: %s\n", K8sVersion),
+	"-n foo get pods": "result for get pods",
 }
 
 // FakeRunner mocks Run

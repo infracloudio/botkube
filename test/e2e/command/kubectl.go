@@ -26,6 +26,7 @@ import (
 
 	"github.com/infracloudio/botkube/pkg/execute"
 	"github.com/infracloudio/botkube/test/e2e/env"
+	"github.com/infracloudio/botkube/test/e2e/utils"
 	"github.com/nlopes/slack"
 	"github.com/stretchr/testify/assert"
 )
@@ -51,7 +52,7 @@ func (c *context) testKubectlCommand(t *testing.T) {
 		},
 		"BotKube get pods out of configured channel": {
 			command:  "get pods",
-			expected: fmt.Sprintf("<@U023BECGF> get pods"),
+			expected: fmt.Sprintf("%s get pods", utils.SlackEmptyResponsePrefix),
 			channel:  "dummy",
 		},
 		"kubectl command on forbidden verb and resource": {
@@ -91,6 +92,9 @@ func (c *context) Run(t *testing.T) {
 	// Run kubectl tests
 	t.Run("Test Kubectl command", c.testKubectlCommand)
 	t.Run("Test BotKube command", c.testBotkubeCommand)
+	t.Run("Test BotKube default command", c.testDefaultClusterCommand)
+	t.Run("Test BotKube default command", c.testDefaultNamespaceCommand)
+	t.Run("Test kubectl command with default namespace", c.testDefaultNamespaceWithKubectlCommands)
 	t.Run("Test disable notifier", c.testNotifierCommand)
 }
 
