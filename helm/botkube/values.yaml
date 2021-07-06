@@ -32,6 +32,12 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
 
+# A base64 encoded kubeconfig that will be stored in a secret, mounted to the pod, and specified in the KUBECONFIG environment variable.
+kubeconfigB64: ""
+
+# Use this to override the default behavior of the service account. May be necessary to set this to false when using kubeconfig
+automountServiceAccountToken: true
+
 # set one of the log levels- info, warn, debug, error, fatal, panic
 logLevel: info
 

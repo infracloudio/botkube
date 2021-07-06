@@ -51,6 +51,10 @@ spec:
             - name: certs
               mountPath: "/etc/ssl/certs"
           {{ end }}
+          {{- if .Values.kubeconfig }}
+            - name: kubeconfig
+              mountPath: "/.kube"
+          {{ end }}
           env:
             - name: CONFIG_PATH
               value: "/config/"
@@ -60,6 +64,10 @@ spec:
               value: {{ .Values.image.tag }}
             - name: METRICS_PORT
               value: {{ .Values.service.targetPort | quote }}
+            {{- if .Values.kubeconfig }}
+            - name: KUBECONFIG
+              value: "/.kube/config"
+            {{- end }}
         {{- if .Values.extraEnv }}
           {{- range $name, $value := .Values.extraEnv }}
             - name: {{ $name }}
@@ -78,10 +86,15 @@ spec:
                 name: {{ include "botkube.fullname" . }}-configmap
             - secret:
                 name: {{ include "botkube.CommunicationsSecretName" . }}
-      {{- if .Values.config.ssl.enabled }} 
+      {{- if .Values.config.ssl.enabled }}
         - name: certs
           secret:
             secretName: {{ include "botkube.fullname" . }}-certificate-secret
+      {{ end }}
+      {{- if .Values.kubeconfig }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ include "botkube.fullname" . }}-kubeconfig
       {{ end }}
       {{- if .Values.securityContext }}
       securityContext:
