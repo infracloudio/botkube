@@ -8,7 +8,7 @@ extraAnnotations: {}
 # Priority class name for the pod
 priorityClassName: ""
 image:
-  repository: infracloudio/botkube
+  repository: ghcr.io/infracloudio/botkube
   pullPolicy: IfNotPresent
   ## default tag is appVersion from Chart.yaml. If you want to use
   ## some other tag then it can be specified here

@@ -37,8 +37,8 @@ jobs:
     - name: Push docker images
       if: success() &&  github.event_name  == 'push'  && endsWith(github.ref ,'develop')
       run: |
-        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-        docker push infracloudio/botkube:latest
+        docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+        docker push ghcr.io/infracloudio/botkube:latest
     - name: Install helm
       if: success() &&  github.event_name  == 'push'  && endsWith(github.ref ,'develop')
       run: |
