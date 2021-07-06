@@ -1,6 +1,7 @@
 module github.com/infracloudio/botkube
 
 require (
+	cloud.google.com/go v0.38.0
 	github.com/Masterminds/squirrel v1.1.0 // indirect
 	github.com/aws/aws-sdk-go v1.32.12
 	github.com/bwmarrin/discordgo v0.20.3
