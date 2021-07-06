@@ -62,3 +62,15 @@ jobs:
         git add .
         git commit -m "Update BotKube latest helm chart"
         git push https://${{ secrets.GH_TOKEN }}@github.com/infracloudio/charts.git
+
+  deploy-for-develop:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name  == 'push' && endsWith(github.ref ,'develop')
+    steps:
+      - name: "Trigger Repository Dispatch - infracloudio/botkube"
+        run: |
+          curl -XPOST -u "${{ secrets.DOCKER_USERNAME}}:${{secrets.GH_TOKEN}}" \
+          -H "Accept: application/vnd.github.everest-preview+json" \
+          -H "Content-Type: application/json" https://api.github.com/repos/infracloudio/botkube/dispatches \
+          --data '{"event_type": "deploy-on-merge",  "client_payload": {"version": "v9.99.9-dev", "branch": "develop" }}'

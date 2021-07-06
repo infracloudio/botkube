@@ -1,0 +1,112 @@
+name: CD
+
+on:
+  release:
+    types:
+    - published
+  repository_dispatch:
+    types:
+    - deploy-on-merge
+
+jobs:
+  deploy-using-kubectl:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout from "${{ github.event.client_payload.branch }}" for repository dispatch event
+      if: github.event_name == 'repository_dispatch'
+      uses: actions/checkout@v2
+      with:
+        ref: "${{ github.event.client_payload.branch }}"
+    - name: Checkout from master for release event
+      if: github.event_name == 'release'
+      uses: actions/checkout@v2
+      with:
+        ref: master
+    - name: Update Slack configuration
+      run: |
+        sed -i -E "/slack:/,/notiftype: short/ { s/SLACK_CHANNEL/${{ secrets.SLACK_CHANNEL }}/; \
+            s/SLACK_API_TOKEN/${{ secrets.SLACK_API_TOKEN }}/; s/false/true/}" deploy-all-in-one.yaml
+        sed -i -E "/kubectl:/,/defaultNamespace: default/ s/false/true/" deploy-all-in-one.yaml
+        sed -i -E "/clustername:/,/# Kubectl executor configs/ s/not-configured/BK-CD-kubectl-${{ github.event_name }}/" deploy-all-in-one.yaml
+        git status
+        git diff
+    - name: Deploy K8s in KinD
+      uses: engineerd/setup-kind@v0.4.0
+    - name: Testing
+      run: |
+        kubectl cluster-info
+        kubectl get pods -n kube-system
+        echo "current-context:" $(kubectl config current-context)
+        echo "environment-kubeconfig:" ${KUBECONFIG}
+    - name: Deploy BotKube on K8s
+      run: |
+        kubectl create -f deploy-all-in-one.yaml
+        sleep 15s
+    - name: Deploy Sample Application - Check Notification on Slack Channel
+      run: kubectl apply -f https://k8s.io/examples/application/deployment.yaml
+    - name: Verify Botkube pods status
+      run: |
+        output=$( kubectl get pods -n botkube | grep -o "Running" )
+        if [[ "$output" == "Running" ]]; then
+          echo "Botkube pods are in running state"
+        else
+          echo "Botkube pods aren't in running state"
+          exit 1
+        fi
+
+  deploy-using-helm:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install and configure helm
+      run: |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh  
+        helm repo add infracloudio https://infracloudio.github.io/charts
+        helm repo update
+    - name: Deploy K8s in KinD
+      uses: engineerd/setup-kind@v0.4.0
+    - name: Testing
+      run: |
+        kubectl cluster-info
+        kubectl get pods -n kube-system
+        echo "current-context:" $(kubectl config current-context)
+        echo "environment-kubeconfig:" ${KUBECONFIG}
+    - name: Deploy BotKube on K8s for repository dispatch event
+      if: github.event_name == 'repository_dispatch'
+      run: |
+        kubectl create ns botkube
+        helm install --version "${{ github.event.client_payload.version }}" botkube --namespace botkube --set communications.slack.enabled=true \
+            --set communications.slack.channel=${{ secrets.SLACK_CHANNEL }} \
+            --set communications.slack.token=${{ secrets.SLACK_API_TOKEN }} \
+            --set config.settings.clustername=BK-CD-helm-${{ github.event_name }} \
+            --set config.settings.allowkubectl=true \
+            --set image.repository=infracloudio/botkube \
+            --set image.tag=latest \
+                infracloudio/botkube
+    - name: Deploy BotKube on K8s for release event
+      if: github.event_name == 'release'
+      run: |
+        kubectl create ns botkube
+        helm install --version "${{github.event.release.tag_name}}" botkube --namespace botkube --set communications.slack.enabled=true \
+            --set communications.slack.channel=${{ secrets.SLACK_CHANNEL }} \
+            --set communications.slack.token=${{ secrets.SLACK_API_TOKEN }} \
+            --set config.settings.clustername=BK-CD-helm-${{ github.event_name }} \
+            --set config.settings.allowkubectl=true \
+            --set image.repository=infracloudio/botkube \
+            --set image.tag=${{github.event.release.tag_name}} \
+                infracloudio/botkube
+    - name: Sleep for 15s
+      run: sleep 15s
+    - name: Deploy Sample Application - Check Notification on Slack Channel
+      run: kubectl apply -f https://k8s.io/examples/application/deployment.yaml
+    - name: Verify Botkube pods status
+      run: |
+        output=$( kubectl get pods -n botkube | grep -o "Running" )
+        if [[ "$output" == "Running" ]]; then
+          echo "Botkube pods are in running state"
+        else
+          echo "Botkube pods aren't in running state"
+          exit 1
+        fi
+
